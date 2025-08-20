@@ -87,6 +87,28 @@
         <option value="eng">영어 (eng)</option>
       </select>
     </div>
+    <div class="row">
+      <label class="toggle">
+        <span>PSM</span>
+        <select id="psm" class="field" style="max-width:200px">
+          <option value="3">3 - 완전 자동 (OSD 제외)</option>
+          <option value="4">4 - 텍스트가 있는 단일 열</option>
+          <option value="6" selected>6 - 균일한 단일 블록</option>
+          <option value="7">7 - 한 줄</option>
+          <option value="8">8 - 한 단어</option>
+          <option value="13">13 - 원시 줄</option>
+        </select>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="usePre" checked /> 전처리(확대/이진화)
+      </label>
+      <select id="scale" class="field" style="max-width:140px">
+        <option value="1">x1.0</option>
+        <option value="1.5">x1.5</option>
+        <option value="2" selected>x2.0</option>
+        <option value="3">x3.0</option>
+      </select>
+    </div>
     <textarea id="ocrText" rows="6" placeholder="OCR 결과가 여기에 표시됩니다. 실패 시 여기에 직접 적어도 됩니다." class="field"></textarea>
     <div class="hint">OCR이 잘 안 되면, 간단히 “로그인 → 저장 → 제출”처럼 핵심 단어만 적어도 됩니다.</div>
   </div>
@@ -98,6 +120,16 @@
       <span class="hint">자동으로 3단계를 뽑아드립니다. 이후 직접 수정할 수 있어요.</span>
     </div>
     <div id="stepsArea" class="grid3"></div>
+  </div>
+
+  <!-- 설명 생성 & TTS (프로토타입) -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="row">
+      <button class="btn" id="genExplain">설명 만들기</button>
+      <button class="btn alt" id="speak">읽어주기 (TTS)</button>
+    </div>
+    <textarea id="explainText" rows="6" class="field" placeholder="예: 먼저 로그인해야 합니다. 다음으로 저장해야 합니다. 마지막으로 제출해야 합니다." readonly></textarea>
+    <div class="hint">프로토타입: 인식된 단계로 간단한 설명을 생성하고 한 번 읽어줍니다.</div>
   </div>
 
   <!-- 카드 생성 & 미리보기 -->
@@ -143,10 +175,17 @@
   const runBtn = document.getElementById('runOCR');
   const copyBtn = document.getElementById('copyText');
   const langSel = document.getElementById('lang');
+  const psmSel = document.getElementById('psm');
+  const usePreChk = document.getElementById('usePre');
+  const scaleSel = document.getElementById('scale');
   const ocrTextEl = document.getElementById('ocrText');
 
   const inferBtn = document.getElementById('infer');
   const stepsArea = document.getElementById('stepsArea');
+
+  const genBtn = document.getElementById('genExplain');
+  const speakBtn = document.getElementById('speak');
+  const explainEl = document.getElementById('explainText');
 
   const makeBtn = document.getElementById('makeCard');
   const dlBtn = document.getElementById('download');
@@ -162,6 +201,68 @@
     else { preview.removeAttribute('src'); preview.style.display = "none"; }
   }
   function notify(msg){ alert(msg); }
+  function setOverlayText(text){
+    const inner = overlay.firstElementChild;
+    if(inner) inner.textContent = text || '처리 중… 잠시만요';
+  }
+  function loadImage(src){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      img.onload = ()=> resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+  function computeOtsuThreshold(hist, total){
+    let sum = 0; for(let i=0;i<256;i++){ sum += i * hist[i]; }
+    let sumB = 0, wB = 0, wF = 0, varMax = -1, threshold = 127;
+    for(let t=0;t<256;t++){
+      wB += hist[t]; if(wB === 0) continue;
+      wF = total - wB; if(wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+    }
+    return threshold;
+  }
+  async function preprocessImageToDataURL(dataUrl, opts){
+    const options = Object.assign({ scale: 2, binarize: true, maxSide: 3000 }, opts||{});
+    const img = await loadImage(dataUrl);
+    let w = img.naturalWidth || img.width;
+    let h = img.naturalHeight || img.height;
+    // 확대
+    const s = Number(options.scale) || 1;
+    let W = Math.round(w * s), H = Math.round(h * s);
+    const scaleDown = Math.max(W, H) > options.maxSide ? options.maxSide / Math.max(W, H) : 1;
+    if(scaleDown < 1){ W = Math.round(W * scaleDown); H = Math.round(H * scaleDown); }
+    const oc = document.createElement('canvas'); oc.width = W; oc.height = H;
+    const ox = oc.getContext('2d');
+    ox.imageSmoothingEnabled = false;
+    ox.drawImage(img, 0, 0, W, H);
+    if(options.binarize){
+      const id = ox.getImageData(0, 0, W, H);
+      const d = id.data;
+      // 그레이스케일 + 히스토그램
+      const hist = new Uint32Array(256);
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i], g=d[i+1], b=d[i+2];
+        const y = clamp(Math.round(0.299*r + 0.587*g + 0.114*b),0,255);
+        d[i]=d[i+1]=d[i+2]=y; hist[y]++;
+      }
+      const total = (d.length/4)|0;
+      const th = computeOtsuThreshold(hist, total);
+      // 이진화
+      for(let i=0;i<d.length;i+=4){
+        const y = d[i]; const v = y > th ? 255 : 0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+      ox.putImageData(id, 0, 0);
+    }
+    return oc.toDataURL('image/png');
+  }
 
   // ---------- 업로드 ----------
   pickBtn.addEventListener('click', ()=> fileInput.click());
@@ -190,18 +291,33 @@
   runBtn.addEventListener('click', async ()=>{
     if(!state.dataUrl) return notify('먼저 메모 사진을 올려주세요.');
     showOverlay(true);
+    setOverlayText('전처리 중…');
     try{
       const lang = langSel.value || 'kor+eng';
-      const result = await Tesseract.recognize(state.dataUrl, lang, { tessedit_pageseg_mode: 6 });
+      const psm = parseInt(psmSel.value || '6', 10);
+      const usePre = !!usePreChk.checked;
+      const scale = parseFloat(scaleSel.value || '2');
+      const inputUrl = usePre ? await preprocessImageToDataURL(state.dataUrl, { scale }) : state.dataUrl;
+      setOverlayText('OCR 중…');
+      const result = await Tesseract.recognize(inputUrl, lang, {
+        logger: m => { if(m && m.progress!=null){ setOverlayText(`OCR 중… ${(m.progress*100).toFixed(0)}%`); } },
+        langPath: 'https://tessdata.projectnaptha.com/5',
+        tessedit_pageseg_mode: psm
+      });
       const text = (result && result.data && result.data.text || '').trim();
       state.ocrText = text;
       ocrTextEl.value = text;
       if(!text) notify('문자를 찾지 못했습니다. 텍스트를 직접 입력해 주세요.');
     }catch(err){
       console.error(err);
-      notify('OCR 중 문제가 발생했습니다. 텍스트를 직접 입력해 주세요.');
+      const msg = (err && err.message) || '';
+      if(/traineddata/i.test(msg)){
+        notify('언어 데이터(kor/eng) 로드에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.');
+      } else {
+        notify('OCR 중 문제가 발생했습니다. 이미지가 흐리면 밝게 촬영하고, 전처리/PSM을 바꿔 다시 시도해 주세요.');
+      }
     }finally{
-      showOverlay(false);
+      showOverlay(false); setOverlayText();
     }
   });
 
@@ -298,6 +414,7 @@
     dlBtn.disabled = false;
   });
 
+
   dlBtn.addEventListener('click', ()=>{
     const url = canvas.toDataURL("image/png");
     const a = document.createElement('a');
@@ -376,6 +493,72 @@
 
   // 초기 캔버스
   drawCard();
+
+  // ---------- 설명 생성 & TTS ----------
+  function generateExplanationFromSteps(steps){
+    const s = (steps || []).slice(0,3);
+    if(s.length === 0) return '';
+    const parts = s.map((st, idx)=>{
+      const prefix = idx === 0 ? '먼저 ' : (idx === s.length-1 ? '마지막으로 ' : '다음으로 ');
+      const title = (st && st.title) ? st.title : '작업';
+      const desc = (st && st.desc) ? st.desc : '';
+      const body = desc ? `${title}을(를) ${desc} 해야 합니다.` : `${title}을(를) 수행해야 합니다.`;
+      return prefix + body;
+    });
+    return parts.join(' ');
+  }
+
+  genBtn.addEventListener('click', ()=>{
+    const text = generateExplanationFromSteps(state.steps);
+    explainEl.value = text || '단계를 먼저 생성한 뒤 설명을 만들 수 있어요.';
+  });
+
+  function pickKoreanVoice(){
+    const voices = window.speechSynthesis.getVoices();
+    if(!voices || voices.length===0) return null;
+    const ko = voices.find(v=> (v.lang||'').toLowerCase().startsWith('ko'))
+            || voices.find(v=> (v.lang||'').toLowerCase().includes('ko'))
+            || null;
+    return ko;
+  }
+
+  let speaking = false;
+  function speakText(text){
+    if(!('speechSynthesis' in window)){
+      notify('이 브라우저는 TTS를 지원하지 않습니다.');
+      return;
+    }
+    if(speaking){
+      window.speechSynthesis.cancel();
+      speaking = false;
+      speakBtn.textContent = '읽어주기 (TTS)';
+      return;
+    }
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ko-KR';
+    const voice = pickKoreanVoice();
+    if(voice) utter.voice = voice;
+    utter.rate = 1.0; // 0.1 ~ 10
+    utter.pitch = 1.0; // 0 ~ 2
+    utter.onend = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
+    utter.onerror = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
+    speaking = true;
+    speakBtn.textContent = '정지';
+    window.speechSynthesis.speak(utter);
+  }
+
+  // iOS 등에서 voices 로드 지연 대응
+  window.speechSynthesis && window.speechSynthesis.addEventListener('voiceschanged', ()=>{/* no-op; pick at speak time */});
+
+  speakBtn && speakBtn.addEventListener('click', ()=>{
+    let text = explainEl.value && explainEl.value.trim();
+    if(!text){
+      text = generateExplanationFromSteps(state.steps);
+      explainEl.value = text;
+    }
+    if(!text){ notify('읽을 설명이 없습니다. 단계를 먼저 생성해 주세요.'); return; }
+    speakText(text);
+  });
 </script>
 </body>
 </html>
