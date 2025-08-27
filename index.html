@@ -396,7 +396,32 @@
   }
 
   // ===================== DETAIL =====================
-  function renderDetail(id){ const cont=$('#view-detail'); const booth=state.booths.find(b=>b.id===id) || state.booths[0]; if(!booth) return; const menus=(booth.menus||[]).map(m=>{ const ev=evaluateMenuSafety(m,state.prefs); const tags=(m.tags||[]).map(t=>`<span class="chip">${t}</span>`).join(' '); const reasons=ev.reasons.length?`<div class="muted" style="margin-top:6px">• ${ev.reasons.join('<br>• ')}</div>`:''; const img = m.src ? `<img src="${m.src}" alt="menu" style="width:100%;max-width:320px;height:auto;object-fit:cover;border-radius:12px;margin-bottom:8px;">` : ''; return `<div class="card">${img}<div class="row between"><h3>${m.name}</h3>${badge(ev.status)}</div><div class="chips" style="margin:6px 0">${tags}</div><div class="muted">${(m.ingredients||[]).join(', ')||'ingredients N/A'}</div>${m.note?`<div class="muted" style="margin-top:6px">Note: ${m.note}</div>`:''}<div class="row" style="gap:8px; margin-top:8px"><button class="btn sm" data-log="${booth.id}::${m.name}">이 메뉴 먹었어요</button></div></div>` }).join(''); const notes=(booth.notes||[]).length?`<div class="muted">${booth.notes.map(n=>'• '+n).join('<br>')}</div>`:''; cont.innerHTML=`<div class="card"><div class="row between"><div><h2 style="margin:0">${booth.name}</h2><div class="chips" style="margin-top:6px">${booth.halal_certified?'<span class="chip">Halal Certified</span>':''}${booth.vegan_certified?'<span class="chip">Vegan</span>':''}</div></div><div>${badge(boothOverallStatus(booth,state.prefs))}</div></div><div style="margin-top:6px">${notes}</div></div>${menus||'<div class="card">등록된 메뉴가 없습니다</div>'}<div class="card"><h3>내 식사 기록</h3><div id="history"></div></div>`; renderHistory(); $$('[data-log]').forEach(b=> b.onclick=()=>{ const [bid,mname]=b.getAttribute('data-log').split('::'); const hist=store.get('sdn_history',[]); hist.unshift({ts:Date.now(), boothId:bid, menu:mname}); store.set('sdn_history',hist); renderHistory(); toast('기록되었습니다') }); }
+  function renderDetail(id){
+    const cont=$('#view-detail');
+    const booth=state.booths.find(b=>b.id===id) || state.booths[0];
+    if(!booth) return;
+    const menus=(booth.menus||[]).map(m=>{
+      const ev=evaluateMenuSafety(m,state.prefs);
+      const tags=(m.tags||[]).map(t=>`<span class="chip">${t}</span>`).join(' ');
+      const reasons=ev.reasons.length?`<div class="muted" style="margin-top:6px">• ${ev.reasons.join('<br>• ')}</div>`:'';
+      // 메뉴 사진이 없으면 placeholder 이미지 사용
+      const imgSrc = m.src || 'https://via.placeholder.com/320x200?text=No+Image';
+      const img = `<img src="${imgSrc}" alt="menu" style="width:100%;max-width:320px;height:auto;object-fit:cover;border-radius:12px;margin-bottom:8px;">`;
+      return `<div class="card">
+        ${img}
+        <div class="row between"><h3>${m.name}</h3>${badge(ev.status)}</div>
+        <div class="chips" style="margin:6px 0">${tags}</div>
+        <div class="muted">${(m.ingredients||[]).join(', ')||'ingredients N/A'}</div>
+        ${m.note?`<div class="muted" style="margin-top:6px">Note: ${m.note}</div>`:''}
+        <div class="row" style="gap:8px; margin-top:8px"><button class="btn sm" data-log="${booth.id}::${m.name}">이 메뉴 먹었어요</button></div>
+        ${reasons}
+      </div>`;
+    }).join('');
+    const notes=(booth.notes||[]).length?`<div class="muted">${booth.notes.map(n=>'• '+n).join('<br>')}</div>`:'';
+    cont.innerHTML=`<div class="card"><div class="row between"><div><h2 style="margin:0">${booth.name}</h2><div class="chips" style="margin-top:6px">${booth.halal_certified?'<span class="chip">Halal Certified</span>':''}${booth.vegan_certified?'<span class="chip">Vegan</span>':''}</div></div><div>${badge(boothOverallStatus(booth,state.prefs))}</div></div><div style="margin-top:6px">${notes}</div></div>${menus||'<div class="card">등록된 메뉴가 없습니다</div>'}<div class="card"><h3>내 식사 기록</h3><div id="history"></div></div>`;
+    renderHistory();
+    $$('[data-log]').forEach(b=> b.onclick=()=>{ const [bid,mname]=b.getAttribute('data-log').split('::'); const hist=store.get('sdn_history',[]); hist.unshift({ts:Date.now(), boothId:bid, menu:mname}); store.set('sdn_history',hist); renderHistory(); toast('기록되었습니다') });
+  }
 
   function renderHistory(){ const hist=store.get('sdn_history',[]); const el=$('#history'); if(!el) return; if(!hist.length){ el.innerHTML='<div class="muted">아직 기록이 없습니다</div>'; return } el.innerHTML=hist.map(h=>{ const d=new Date(h.ts).toLocaleString(); return `<div class="row between" style="padding:8px 0; border-bottom:1px dashed var(--border)"><div>${d}</div><div class="muted">${h.boothId}</div><div><b>${h.menu}</b></div></div>` }).join(''); }
 
