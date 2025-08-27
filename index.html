@@ -1,564 +1,462 @@
-<!DOCTYPE html>
-<html lang="ko">
+<!doctype html>
+<html lang="ko" class="light">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>메모 → 따라하기 카드 (프론트 전용 MVP)</title>
-<!-- Tesseract.js (브라우저 OCR) -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<style>
-  :root{
-    --bg:#f6f7fb; --text:#111; --muted:#6b7280; --accent:#111;
-    --card:#fff; --border:#e5e7eb; --accent-strong:#ef4444;
-  }
-  .hc { --bg:#ffffff; --text:#0a0a0a; --muted:#374151; --accent:#0a0a0a; --card:#ffffff; --border:#d1d5db; --accent-strong:#ef4444; }
-  html,body{height:100%;}
-  body{margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif,system-ui, -apple-system, Segoe UI,Roboto,Apple Color Emoji, Noto Color Emoji, "Noto Sans KR", "Malgun Gothic", sans-serif;}
-  .container{max-width:820px; margin:0 auto; padding:20px;}
-  h1{font-size:24px; font-weight:800; margin:6px 0 18px;}
-  .card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px;}
-  .stack{display:grid; gap:12px;}
-  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
-  .btn{border:1px solid var(--border); background:#111; color:#fff; padding:12px 16px; border-radius:12px; font-size:16px; cursor:pointer}
-  .btn.alt{background:#fff; color:var(--text)}
-  .btn.ghost{background:transparent}
-  .btn:disabled{opacity:.55; cursor:not-allowed}
-  .hint{color:var(--muted); font-size:13px}
-  .field, textarea, input[type="text"]{
-    width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:12px; font-size:16px; background:#fff;
-  }
-  .drop{border:2px dashed var(--border); border-radius:16px; padding:20px; text-align:center}
-  img.preview{width:100%; height:auto; border-radius:12px; border:1px solid var(--border)}
-  .pill{font-size:12px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:#fff}
-  .step-box{border:1px solid var(--border); border-radius:12px; padding:12px}
-  .grid3{display:grid; gap:12px}
-  @media(min-width:640px){ .grid3{grid-template-columns: 1fr 1fr 1fr;} }
-  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; color:#fff; font-size:18px; z-index:50}
-  .overlay.show{display:flex}
-  .toggle{display:flex; align-items:center; gap:6px; font-size:14px}
-  .progress{display:flex; gap:22px; padding:4px 0 6px 2px}
-  .progress .dot{width:10px; height:10px; border-radius:50%; background:var(--accent-strong)}
-  .footer-note{color:var(--muted); font-size:14px}
-  .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background:#f3f4f6; border:1px solid var(--border); border-radius:6px; padding:2px 6px; font-size:12px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SDN Food Booth Filter · Stable MVP</title>
+  <style>
+    /* ===================== THEME (Dark + Light) ===================== */
+    :root{
+      --bg:#0b0f1a; --bg-2:#0e1422; --surface:#111a2c; --surface-2:#0f1729; --border:#24314d;
+      --text:#e9eef9; --muted:#9fb0c8;
+      --brand:#4f7cff; --brand-2:#7cc5ff; --accent:#22c55e;
+      --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+      --radius:16px; --shadow:0 8px 28px rgba(0,0,0,.28);
+      --tab-h:64px; --safe-bottom:env(safe-area-inset-bottom, 0px);
+    }
+    /* Light theme overrides (applied via html.light) */
+    html.light{
+      --bg:#f8fafc; --bg-2:#ffffff; --surface:#ffffff; --surface-2:#f3f6ff; --border:#d9e3ff;
+      --text:#0b1426; --muted:#5c6d89;
+      --brand:#2855ff; --brand-2:#55b5ff; --accent:#0ea5e9;
+      --shadow:0 10px 26px rgba(12,30,60,.08);
+    }
+
+    *{box-sizing:border-box}
+    html, body{height:100%}
+    body{margin:0; background:linear-gradient(180deg, var(--bg), var(--bg-2)); color:var(--text); font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", "Apple SD Gothic Neo", Helvetica, Arial; -webkit-font-smoothing:antialiased}
+    :focus-visible{outline:2px solid var(--brand); outline-offset:2px; border-radius:12px}
+
+    /* ===================== LAYOUT ===================== */
+    header{ position:sticky; top:0; z-index:20; background:color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter:saturate(160%) blur(14px); border-bottom:1px solid var(--border) }
+    .wrap{ max-width:960px; margin:0 auto; padding:0 16px }
+    main{ padding:16px 0 calc(var(--tab-h) + 18px + var(--safe-bottom)) }
+
+    .row{ display:flex; align-items:center; gap:10px }
+    .between{ justify-content:space-between }
+
+    /* App Bar */
+    .brand{ font-weight:900; letter-spacing:.2px; font-size:clamp(16px, 3vw, 18px) }
+    .brand em{ background:linear-gradient(90deg, var(--brand), var(--accent)); -webkit-background-clip:text; background-clip:text; color:transparent; font-style:normal }
+    .toolbar{ gap:8px }
+
+    .iconbtn{ display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; background:transparent; border:1px solid transparent; color:var(--text); cursor:pointer }
+    .iconbtn:hover{ background:color-mix(in oklab, var(--surface) 70%, transparent); border-color:var(--border) }
+
+    select, input[type="search"]{ background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:14px; padding:12px 12px; }
+
+    .card{ background:linear-gradient(180deg, var(--surface), var(--surface-2)); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px }
+    .muted{ color:var(--muted); font-size:.93rem }
+
+    .grid{ display:grid; gap:14px }
+    .grid.cols-2{ grid-template-columns:1fr }
+    @media(min-width:720px){ .grid.cols-2{ grid-template-columns:1fr 1fr } }
+
+    .chips{ display:flex; gap:8px; overflow:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch }
+    .chip{ flex:0 0 auto; display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:color-mix(in oklab, var(--surface) 90%, transparent); border:1px solid var(--border); cursor:pointer; user-select:none; font-weight:600 }
+    .chip.active{ box-shadow:inset 0 0 0 2px var(--brand) }
+
+    .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 14px; border-radius:14px; border:1px solid var(--border); cursor:pointer; background:var(--brand); color:#fff; font-weight:800 }
+    .btn.ghost{ background:transparent; color:var(--text); font-weight:700 }
+    .btn.sm{ padding:8px 10px; border-radius:10px }
+
+    .status{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:12px; font-weight:800 }
+    .ok{ background:rgba(34,197,94,.12); color:#16a34a; border:1px solid rgba(34,197,94,.35) }
+    .warn{ background:rgba(245,158,11,.12); color:#b45309; border:1px solid rgba(245,158,11,.35) }
+    .bad{ background:rgba(239,68,68,.12); color:#b91c1c; border:1px solid rgba(239,68,68,.35) }
+
+    .booth{ display:flex; gap:12px; align-items:flex-start }
+    .booth .meta{ flex:1 }
+
+    /* Sticky filters */
+    .subhead{ position:sticky; top:64px; z-index:5; background:linear-gradient(180deg, var(--surface), var(--surface-2)); padding:12px 16px; margin:-16px -16px 8px; border-bottom:1px solid var(--border); border-radius:var(--radius) var(--radius) 0 0 }
+
+    /* Bottom Tabs */
+    .tabs{ position:fixed; bottom:0; left:0; right:0; display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:10px 14px calc(10px + var(--safe-bottom)); background:color-mix(in oklab, var(--bg) 92%, transparent); border-top:1px solid var(--border); backdrop-filter:saturate(150%) blur(10px); height:var(--tab-h) }
+    .tab{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:12px; color:#4b5563; border:1px solid transparent; cursor:pointer }
+    .tab.active{ background:rgba(79,124,255,.14); border-color:rgba(79,124,255,.35); color:#0b1426 }
+
+    /* Toast */
+    .toast{ position:fixed; left:50%; bottom:calc(var(--tab-h) + 12px + var(--safe-bottom)); transform:translateX(-50%); background:#0f172a; color:#e7ecf6; border:1px solid #263142; padding:10px 14px; border-radius:12px; opacity:0; pointer-events:none; transition:opacity .2s ease; z-index:50 }
+    .toast.show{ opacity:1 }
+
+    /* Sheet (bottom drawer) */
+    .sheet{ position:fixed; left:0; right:0; bottom:-100%; background:linear-gradient(180deg, var(--surface), var(--surface-2)); border-top-left-radius:24px; border-top-right-radius:24px; border:1px solid var(--border); box-shadow:var(--shadow); padding:16px; transition:bottom .25s ease; z-index:40 }
+    .sheet.open{ bottom:calc(var(--safe-bottom)) }
+    .sheet .handle{ width:48px; height:5px; border-radius:999px; background:color-mix(in oklab, var(--border) 40%, white 20%); margin:0 auto 10px }
+  </style>
 </head>
-<body class="hc">
-<div class="overlay" id="overlay"><div>처리 중… 잠시만요</div></div>
-<div class="container">
-  <h1>메모 → 따라하기 카드 (프론트 전용 MVP)</h1>
-
-  <!-- 접근성/설정 -->
-  <div class="card stack">
-    <div class="row">
-      <label class="toggle">
-        <input type="checkbox" id="contrastToggle" checked />
-        고대비 모드
-      </label>
-      <span class="pill">브라우저 OCR (Tesseract.js)</span>
-      <span class="pill">서버 없음 · 오프라인 가능*</span>
-    </div>
-    <div class="hint">* 최초 실행 시 OCR 엔진이 로드되며 네트워크가 필요할 수 있습니다. 이후 브라우저 캐시 사용.</div>
-  </div>
-
-  <!-- 업로드 영역 -->
-  <div class="card stack" style="margin-top:12px;">
-    <div class="stack">
-      <div class="drop" id="drop">
-        <div style="margin-bottom:8px;">종이 메모 사진을 올려주세요</div>
-        <div class="row" style="justify-content:center;">
-          <input id="file" type="file" accept="image/*" capture="environment" style="display:none" />
-          <button class="btn" id="pick">사진 찍기 / 업로드</button>
-          <button class="btn alt" id="clear">지우기</button>
-        </div>
-        <div class="hint" style="margin-top:8px">밝은 곳에서 수직으로 촬영하면 인식률이 높습니다.</div>
-      </div>
-      <img id="preview" class="preview" alt="" style="display:none" />
-    </div>
-  </div>
-
-  <!-- OCR & 텍스트 편집 -->
-  <div class="card stack" style="margin-top:12px;">
-    <div class="row">
-      <button class="btn" id="runOCR">OCR로 텍스트 추출</button>
-      <button class="btn alt" id="copyText">추출 텍스트 복사</button>
-      <select id="lang" class="field" style="max-width:220px">
-        <option value="kor+eng" selected>한국어+영어 (kor+eng)</option>
-        <option value="kor">한국어 (kor)</option>
-        <option value="eng">영어 (eng)</option>
-      </select>
-    </div>
-    <div class="row">
-      <label class="toggle">
-        <span>PSM</span>
-        <select id="psm" class="field" style="max-width:200px">
-          <option value="3">3 - 완전 자동 (OSD 제외)</option>
-          <option value="4">4 - 텍스트가 있는 단일 열</option>
-          <option value="6" selected>6 - 균일한 단일 블록</option>
-          <option value="7">7 - 한 줄</option>
-          <option value="8">8 - 한 단어</option>
-          <option value="13">13 - 원시 줄</option>
+<body>
+  <!-- App Bar -->
+  <header>
+    <div class="wrap row between" style="padding:12px 0">
+      <div class="brand">🍽️ <em>SDN</em> Food Booth Filter</div>
+      <div class="row toolbar">
+        <select id="lang" title="Language">
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+          <option value="ar">العربية</option>
         </select>
-      </label>
-      <label class="toggle">
-        <input type="checkbox" id="usePre" checked /> 전처리(확대/이진화)
-      </label>
-      <select id="scale" class="field" style="max-width:140px">
-        <option value="1">x1.0</option>
-        <option value="1.5">x1.5</option>
-        <option value="2" selected>x2.0</option>
-        <option value="3">x3.0</option>
-      </select>
+        <button class="iconbtn" id="btnExport" title="내보내기">⬇️</button>
+        <button class="iconbtn" id="btnTheme" title="테마 전환">🌓</button>
+      </div>
     </div>
-    <textarea id="ocrText" rows="6" placeholder="OCR 결과가 여기에 표시됩니다. 실패 시 여기에 직접 적어도 됩니다." class="field"></textarea>
-    <div class="hint">OCR이 잘 안 되면, 간단히 “로그인 → 저장 → 제출”처럼 핵심 단어만 적어도 됩니다.</div>
-  </div>
+  </header>
 
-  <!-- 단계 추론 & 편집 -->
-  <div class="card stack" style="margin-top:12px;">
-    <div class="row">
-      <button class="btn" id="infer">단계 자동 추출</button>
-      <span class="hint">자동으로 3단계를 뽑아드립니다. 이후 직접 수정할 수 있어요.</span>
-    </div>
-    <div id="stepsArea" class="grid3"></div>
-  </div>
+  <main class="wrap">
+    <!-- 지도 영역 추가 -->
+    <section id="mapSection" style="margin-bottom:18px;">
+      <div id="mapContainer" style="width:100%;height:320px;border-radius:18px;overflow:hidden;position:relative;">
+        <!-- 지도 iframe 및 마커가 동적으로 렌더링됨 -->
+      </div>
+    </section>
+    <!-- Booths (default) -->
+    <section id="view-booths" class="grid">
+      <div class="card" id="welcome">
+        <h2 style="margin:0 0 6px">행사 푸드 부스 한눈에 필터링</h2>
+        <p class="muted">상단 검색이나 <b>⚙️ 필터</b>로 내 기준(할랄/비건/알레르기) 적용 → 아래 목록이 즉시 업데이트됩니다.</p>
+        <div class="row" style="gap:8px; margin-top:6px">
+          <button class="btn sm" id="openSheetTop">⚙️ 필터 열기</button>
+          <button class="btn ghost sm" id="seedData">샘플 데이터 재설정</button>
+        </div>
+      </div>
 
-  <!-- 설명 생성 & TTS (프로토타입) -->
-  <div class="card stack" style="margin-top:12px;">
-    <div class="row">
-      <button class="btn" id="genExplain">설명 만들기</button>
-      <button class="btn alt" id="speak">읽어주기 (TTS)</button>
-    </div>
-    <textarea id="explainText" rows="6" class="field" placeholder="예: 먼저 로그인해야 합니다. 다음으로 저장해야 합니다. 마지막으로 제출해야 합니다." readonly></textarea>
-    <div class="hint">프로토타입: 인식된 단계로 간단한 설명을 생성하고 한 번 읽어줍니다.</div>
-  </div>
+      <div class="card">
+        <div class="subhead">
+          <div class="row between" style="gap:8px">
+            <input id="q" type="search" placeholder="부스·메뉴·성분 검색 (예: 비건, 돼지, 액젓)" style="flex:1" />
+            <button class="btn ghost sm" id="openSheet">⚙️ 필터</button>
+          </div>
+          <div class="chips" id="quickChips" style="margin-top:10px">
+            <div class="chip" data-quick="halalOnly">Halal Only</div>
+            <div class="chip" data-quick="veganFriendly">Vegan Friendly</div>
+            <div class="chip" data-quick="allergenSafe">Allergen‑Safe</div>
+          </div>
+        </div>
+        <div id="summary" class="muted" style="margin:4px 0 8px"></div>
+        <div id="boothContainer" class="grid"></div>
+        <div id="emptyState" class="muted" style="display:none; padding:12px 4px">조건에 맞는 부스를 찾지 못했어요. 기준을 완화해 보세요.</div>
+      </div>
+    </section>
 
-  <!-- 카드 생성 & 미리보기 -->
-  <div class="card stack" style="margin-top:12px;">
-    <div class="row">
-      <button class="btn" id="makeCard">카드 이미지 만들기</button>
-      <button class="btn alt" id="download" disabled>다운로드 (PNG)</button>
-    </div>
-    <div class="stack">
-      <canvas id="cardCanvas" width="1080" height="1350" style="width:100%; border:1px solid var(--border); border-radius:12px; background:#fff"></canvas>
-      <div class="footer-note">팁: <span class="kbd">Ctrl/Cmd + P</span> 로 인쇄하면 종이 카드로도 활용할 수 있어요.</div>
-    </div>
-  </div>
+    <!-- Detail -->
+    <section id="view-detail" class="grid" style="display:none"></section>
 
-  <div style="height:24px"></div>
-</div>
-
-<script>
-  // ---------- 상태 ----------
-  const state = {
-    dataUrl: null,
-    ocrText: "",
-    steps: [
-      { title: "로그인", desc: "아이디/비밀번호 입력" },
-      { title: "저장",   desc: "오른쪽 위 버튼" },
-      { title: "제출",   desc: "업로드 후 확인" },
-    ],
-    highContrast: true,
-    cardTitle: "오늘의 따라하기"
-  };
-
-  // ---------- DOM ----------
-  const body = document.body;
-  const overlay = document.getElementById('overlay');
-  const contrastToggle = document.getElementById('contrastToggle');
-
-  const fileInput = document.getElementById('file');
-  const pickBtn = document.getElementById('pick');
-  const clearBtn = document.getElementById('clear');
-  const drop = document.getElementById('drop');
-  const preview = document.getElementById('preview');
-
-  const runBtn = document.getElementById('runOCR');
-  const copyBtn = document.getElementById('copyText');
-  const langSel = document.getElementById('lang');
-  const psmSel = document.getElementById('psm');
-  const usePreChk = document.getElementById('usePre');
-  const scaleSel = document.getElementById('scale');
-  const ocrTextEl = document.getElementById('ocrText');
-
-  const inferBtn = document.getElementById('infer');
-  const stepsArea = document.getElementById('stepsArea');
-
-  const genBtn = document.getElementById('genExplain');
-  const speakBtn = document.getElementById('speak');
-  const explainEl = document.getElementById('explainText');
-
-  const makeBtn = document.getElementById('makeCard');
-  const dlBtn = document.getElementById('download');
-  const canvas = document.getElementById('cardCanvas');
-  const ctx = canvas.getContext('2d');
-
-  // ---------- 유틸 ----------
-  function showOverlay(on) { overlay.classList.toggle('show', !!on); }
-  function readFileAsDataURL(file){ return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(file); }); }
-  function setPreview(dataUrl){
-    state.dataUrl = dataUrl;
-    if(dataUrl){ preview.src = dataUrl; preview.style.display = ""; }
-    else { preview.removeAttribute('src'); preview.style.display = "none"; }
+    <!-- Admin -->
+    <section id="view-admin" class="grid" style="display:none">
+      <div class="card">
+        <h2>판매자/운영자 메뉴 등록</h2>
+        <p class="muted">JSON/텍스트로 메뉴를 추가하세요. (로컬 저장) · *본 서비스는 정보 제공이며 인증을 대체하지 않습니다.</p>
+        <details><summary class="muted">형식 예시 보기</summary>
+<pre style="white-space:pre-wrap; background:var(--surface-2); padding:12px; border-radius:12px; border:1px solid var(--border); overflow:auto">
+[
+  {"id":"B-12","name":"Kimbap House","halal_certified":false,
+   "menus":[
+     {"name":"채식김밥","tags":["vegetarian"],"ingredients":["rice","seaweed","cucumber","carrot","spinach"],"note":"계란 제외 가능"},
+     {"name":"참치김밥","ingredients":["tuna","egg","mayonnaise"],"note":""}
+   ]
   }
-  function notify(msg){ alert(msg); }
-  function setOverlayText(text){
-    const inner = overlay.firstElementChild;
-    if(inner) inner.textContent = text || '처리 중… 잠시만요';
+]
+</pre></details>
+        <textarea id="adminPaste" placeholder="여기에 JSON 또는 줄단위 텍스트를 붙여넣기"></textarea>
+        <div class="row" style="gap:8px; margin-top:10px">
+          <button class="btn" id="importJson">JSON 불러오기</button>
+          <button class="btn" id="importLines">줄단위 메뉴 추가</button>
+          <button class="btn ghost" id="clearData">모든 데이터 초기화</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>선택: 메뉴판 이미지 OCR (온라인시)</h3>
+        <p class="muted">인터넷 연결 시 <b>Tesseract.js</b> 동적 로드로 이미지→텍스트 변환.</p>
+        <input id="ocrFile" type="file" accept="image/*" />
+        <div class="row" style="gap:8px; margin:8px 0">
+          <button class="btn" id="runOcr">OCR 실행</button>
+          <span id="ocrStatus" class="muted"></span>
+        </div>
+        <textarea id="ocrOut" placeholder="OCR 결과 텍스트"></textarea>
+      </div>
+    </section>
+
+    <!-- Prefs (sheet) -->
+    <div class="sheet" id="sheet">
+      <div class="handle"></div>
+      <div class="row between" style="margin-bottom:6px">
+        <h3 style="margin:0">필터 & 기준</h3>
+        <button class="iconbtn" id="closeSheet" aria-label="닫기">✕</button>
+      </div>
+      <div class="grid cols-2">
+        <div>
+          <div class="muted" style="margin:6px 0 4px">종교·윤리 기준</div>
+          <label class="row between"><span>Halal 필요(엄격)</span><input type="checkbox" name="rule" value="halal"></label>
+          <label class="row between"><span>Halal 선호(유연)</span><input type="checkbox" name="rule" value="halal_flexible"></label>
+          <label class="row between"><span>Vegan</span><input type="checkbox" name="rule" value="vegan"></label>
+          <label class="row between"><span>Vegetarian</span><input type="checkbox" name="rule" value="vegetarian"></label>
+          <label class="row between"><span>Kosher</span><input type="checkbox" name="rule" value="kosher"></label>
+        </div>
+        <div>
+          <div class="muted" style="margin:6px 0 4px">알레르기·회피 성분</div>
+          <div class="chips" id="avoidChips" style="flex-wrap:wrap">
+            <div class="chip" data-avoid="pork">돼지고기</div>
+            <div class="chip" data-avoid="alcohol">알코올</div>
+            <div class="chip" data-avoid="beef">소고기</div>
+            <div class="chip" data-avoid="chicken">닭고기</div>
+            <div class="chip" data-avoid="fish">생선</div>
+            <div class="chip" data-avoid="shellfish">갑각류</div>
+            <div class="chip" data-avoid="dairy">유제품</div>
+            <div class="chip" data-avoid="egg">계란</div>
+            <div class="chip" data-avoid="gluten">글루텐</div>
+            <div class="chip" data-avoid="peanut">땅콩/견과</div>
+            <div class="chip" data-avoid="gelatin">젤라틴</div>
+            <div class="chip" data-avoid="fish_sauce">액젓/어간장</div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="gap:8px; margin-top:10px">
+        <button class="btn" id="savePrefs">저장하고 적용</button>
+        <button class="btn ghost" id="resetPrefs">초기화</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Tabs -->
+  <nav class="tabs">
+    <div class="tab active" data-tab="booths">🗺️ <small>부스</small></div>
+    <div class="tab" data-tab="detail">📋 <small>상세</small></div>
+    <div class="tab" data-tab="admin">🛠️ <small>관리</small></div>
+    <div class="tab" data-tab="share">🔗 <small>공유</small></div>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+  // ===================== STATE =====================
+  const $ = (s,p=document)=>p.querySelector(s); const $$=(s,p=document)=>[...p.querySelectorAll(s)];
+  const state = { lang:'ko', prefs:{rules:[], avoid:[]}, booths:[], activeBoothId:null, quick:{halalOnly:false, veganFriendly:false, allergenSafe:false} };
+
+  const SAMPLE_BOOTHS=[
+    { id:'B-01', name:'Kimbap House', halal_certified:false, vegan_certified:false,
+      lat:37.5665, lng:126.9780, // 예시 좌표(서울)
+      menus:[
+        {name:'채식김밥', tags:['vegetarian'], ingredients:['rice','seaweed','cucumber','carrot','spinach','sesame'], note:'계란 제외 가능', src:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=400&q=80'},
+        {name:'참치김밥', ingredients:['tuna','egg','mayonnaise'], src:'https://images.unsplash.com/photo-1464306076886-debede6b2f85?auto=format&fit=crop&w=400&q=80'},
+        {name:'김치전', ingredients:['kimchi','wheat_flour'], note:'일부 김치는 액젓 포함 가능', src:'https://images.unsplash.com/photo-1519864600265-abb23847ef2c?auto=format&fit=crop&w=400&q=80'}],
+      notes:['일부 메뉴 계란/마요네즈 포함','김치 어류 성분 가능성 주의'] },
+    { id:'B-12', name:'Seoul BBQ Lab', halal_certified:false, vegan_certified:false,
+      lat:37.5651, lng:126.9895,
+      menus:[
+        {name:'불고기', ingredients:['beef','soy_sauce','garlic','sugar','mirin'], note:'양념에 맛술(알코올) 포함 가능', src:'https://images.unsplash.com/photo-1502741338009-cac2772e18bc?auto=format&fit=crop&w=400&q=80'},
+        {name:'돼지김치찌개', ingredients:['pork','kimchi','gochujang','anchovy_broth'], note:'돼지고기 · 멸치육수', src:'https://images.unsplash.com/photo-1519864600265-abb23847ef2c?auto=format&fit=crop&w=400&q=80'}],
+      notes:['돼지고기 취급','알코올성 조미료 가능성'] },
+    { id:'B-20', name:'Vegan Bibimbap', halal_certified:false, vegan_certified:true,
+      lat:37.5678, lng:126.9770,
+      menus:[
+        {name:'비건 비빔밥', tags:['vegan'], ingredients:['rice','veggie_mix','gochujang'], note:'고추장에 주정 성분 미량 포함 가능', src:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=400&q=80'},
+        {name:'두부스테이크', tags:['vegan'], ingredients:['tofu','soy_sauce','mushroom'], src:'https://images.unsplash.com/photo-1464306076886-debede6b2f85?auto=format&fit=crop&w=400&q=80'}],
+      notes:['전 메뉴 동물성 원재료 없음(표방)'] },
+    { id:'B-33', name:'Halal Chicken & Tea', halal_certified:true, vegan_certified:false,
+      lat:37.5640, lng:126.9820,
+      menus:[
+        {name:'Halal 치킨 플레이트', tags:['halal'], ingredients:['chicken','rice','salad'], note:'할랄 인증 닭고기', src:'https://images.unsplash.com/photo-1502741338009-cac2772e18bc?auto=format&fit=crop&w=400&q=80'},
+        {name:'밀크티', ingredients:['milk','tea'], note:'유제품 포함', src:'https://images.unsplash.com/photo-1519864600265-abb23847ef2c?auto=format&fit=crop&w=400&q=80'}],
+      notes:['할랄 인증서 보유(현장 표기)'] }
+  ];
+
+  const KEYWORDS={
+    pork:['pork','ham','bacon','돼지','돼지고기','삼겹','햄'], alcohol:['alcohol','wine','mirin','cooking_wine','술','청주','미림','맛술'],
+    beef:['beef','소고기','소불고기','사골'], chicken:['chicken','닭','치킨'], fish:['fish','tuna','연어','fishcake','어묵','생선','멸치','anchovy','bonito','가다랑어'],
+    shellfish:['shrimp','crab','게','새우','조개','굴','오징어','문어'], dairy:['milk','cheese','butter','cream','yogurt','우유','치즈','버터','크림','요거트'],
+    egg:['egg','계란','달걀','마요네즈','mayonnaise'], gluten:['wheat','flour','밀','글루텐','wheat_flour'], peanut:['peanut','견과','땅콩','호두','아몬드','캐슈'],
+    gelatin:['gelatin','젤라틴','lard','라드'], fish_sauce:['fish_sauce','액젓','어간장'] };
+
+  const store={ get(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch(e){return f}}, set(k,v){localStorage.setItem(k,JSON.stringify(v))} };
+  const toast=(m)=>{const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1400)}
+  // Surface runtime errors to UI
+  window.addEventListener('error', (e)=>{ try{ console.error(e.error||e.message); }catch{} const t=document.querySelector('#toast'); if(t){ t.textContent='오류: '+(e.message||'script'); t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2200); } });
+
+  // ===================== INIT =====================
+  function init(){
+    // Theme
+    const prefersLight = matchMedia && matchMedia('(prefers-color-scheme: light)').matches;
+    const savedTheme = store.get('sdn_theme', prefersLight? 'light':'dark');
+    document.documentElement.classList.toggle('light', savedTheme==='light');
+
+    // Language
+    const savedLang=store.get('sdn_lang',null)||(navigator.language||'ko').slice(0,2); state.lang=['ko','en','ar'].includes(savedLang)?savedLang:'ko';
+    document.documentElement.lang=state.lang; document.documentElement.dir=state.lang==='ar'?'rtl':'ltr';
+    $('#lang').value=state.lang;
+
+    // Data
+    state.prefs=store.get('sdn_prefs',{rules:[], avoid:[]});
+    const savedBooths = store.get('sdn_booths', null);
+    state.booths = (Array.isArray(savedBooths) && savedBooths.length) ? savedBooths : SAMPLE_BOOTHS;
+    store.set('sdn_booths', state.booths);
+
+    // Deep-link ?booth=
+    const url=new URL(location.href); const boothId=url.searchParams.get('booth');
+    if(boothId){ state.activeBoothId=boothId; switchTab('detail'); renderDetail(boothId); } else { switchTab('booths'); renderBoothList(); }
+
+    hydrateSheet();
   }
-  function loadImage(src){
-    return new Promise((resolve, reject)=>{
-      const img = new Image();
-      img.onload = ()=> resolve(img);
-      img.onerror = reject;
-      img.src = src;
+
+  // ===================== PREFS & SHEET =====================
+  function hydrateSheet(){
+    $$('input[name="rule"]').forEach(ch=> ch.checked = state.prefs.rules.includes(ch.value));
+    $$('#avoidChips .chip').forEach(ch=> ch.classList.toggle('active', state.prefs.avoid.includes(ch.dataset.avoid)));
+  }
+
+  function savePrefs(){
+    const rules=$$('input[name="rule"]:checked').map(ch=>ch.value);
+    const avoid=$$('#avoidChips .chip.active').map(ch=>ch.dataset.avoid);
+    state.prefs={rules, avoid}; store.set('sdn_prefs',state.prefs); toast('기준이 적용되었습니다');
+    renderBoothList(); closeSheet();
+  }
+
+  function resetPrefs(){ state.prefs={rules:[], avoid:[]}; store.set('sdn_prefs',state.prefs); hydrateSheet(); toast('기준 초기화'); renderBoothList(); }
+
+  // Click to toggle avoid chips
+  function wireAvoidChips(){ $$('#avoidChips .chip').forEach(ch=> ch.onclick=()=> ch.classList.toggle('active')); }
+
+  // ===================== SAFETY EVAL =====================
+  function evaluateMenuSafety(menu,prefs){
+    const reasons=[]; const txt=((menu.name||'')+' '+(menu.note||'')+' '+(menu.ingredients||[]).join(' ')).toLowerCase();
+    for(const k of prefs.avoid){ const words=KEYWORDS[k]||[]; if(words.some(w=>txt.includes(w))) reasons.push(`회피 성분 포함: ${k}`); }
+    let veganFail=false, vegetarianFail=false; const animal=[...KEYWORDS.beef,...KEYWORDS.chicken,...KEYWORDS.pork,...KEYWORDS.fish,...KEYWORDS.shellfish,...KEYWORDS.gelatin].filter(Boolean); const dairyEgg=[...KEYWORDS.dairy,...KEYWORDS.egg].filter(Boolean);
+    if(prefs.rules.includes('vegan')){ if(animal.some(w=>txt.includes(w))||dairyEgg.some(w=>txt.includes(w))) {veganFail=true; reasons.push('비건 불가 성분 존재')} if((KEYWORDS.fish_sauce||[]).some(w=>txt.includes(w))) reasons.push('비건 주의: 액젓 가능성'); }
+    if(prefs.rules.includes('vegetarian')){ if(animal.some(w=>txt.includes(w))) {vegetarianFail=true; reasons.push('베지테리언 불가 성분 존재')} }
+    let halalFail=false, halalCaution=false; if(prefs.rules.includes('halal')||prefs.rules.includes('halal_flexible')){
+      if((KEYWORDS.pork||[]).some(w=>txt.includes(w))) {halalFail=true; reasons.push('할랄 금지: 돼지고기')} if((KEYWORDS.alcohol||[]).some(w=>txt.includes(w))) {halalFail=true; reasons.push('할랄 금지: 알코올/맛술')}
+      const hasBeef=(KEYWORDS.beef||[]).some(w=>txt.includes(w)); const hasChicken=(KEYWORDS.chicken||[]).some(w=>txt.includes(w));
+      if((hasBeef||hasChicken) && !(menu.tags||[]).includes('halal')){ if(prefs.rules.includes('halal')) {halalFail=true; reasons.push('할랄 미확인 육류')} else {halalCaution=true; reasons.push('할랄 미확인 육류 (유연)')} }
+    }
+    let score=100; if(reasons.some(r=>/금지|불가|회피/.test(r))) score-=70; if(reasons.some(r=>/주의/.test(r))) score-=25; let status='ok'; if(score<50||veganFail||vegetarianFail||halalFail) status='bad'; else if(score<80||halalCaution) status='warn';
+    return {status, score, reasons};
+  }
+
+  function boothOverallStatus(booth,prefs){ let anyOk=false, anyWarn=false, anyBad=false; for(const m of (booth.menus||[])){ const ev=evaluateMenuSafety(m,prefs); if(ev.status==='ok') anyOk=true; if(ev.status==='warn') anyWarn=true; if(ev.status==='bad') anyBad=true; } return anyOk?'ok':(anyWarn?'warn':'bad'); }
+  const badge=(s)=>`<span class="status ${s}">● ${s==='ok'?'안전':s==='warn'?'주의':'회피'}</span>`;
+
+  // ===================== RENDER LIST =====================
+  function applyQuick(list){ const { halalOnly, veganFriendly, allergenSafe }=state.quick; let out=list.slice(); if(halalOnly){ out=out.filter(b=> b.halal_certified || (b.menus||[]).some(m=> (m.tags||[]).includes('halal')) ); } if(veganFriendly){ out=out.filter(b=> b.vegan_certified || (b.menus||[]).some(m=> (m.tags||[]).includes('vegan')) ); } if(allergenSafe && state.prefs.avoid.length){ out=out.filter(b=> (b.menus||[]).some(m=> !state.prefs.avoid.some(a=> (KEYWORDS[a]||[]).some(w=> ((m.name||'')+' '+(m.note||'')+' '+(m.ingredients||[]).join(' ')).toLowerCase().includes(w))) )); } return out; }
+
+  function renderSummary(list){ const prefsActive=!!(state.prefs.rules.length||state.prefs.avoid.length); let ok=0,warn=0,bad=0; for(const b of list){ const s=prefsActive?boothOverallStatus(b,state.prefs):'warn'; if(s==='ok') ok++; else if(s==='warn') warn++; else bad++; } $('#summary').textContent=`총 ${list.length}부스 · 안전 ${ok} · 주의 ${warn} · 회피 ${bad}`; }
+
+  function renderBoothList(){ const cont=$('#boothContainer'); cont.innerHTML=''; let list=state.booths; const q=($('#q').value||'').toLowerCase().trim(); if(q){ list=list.filter(b=> b.name.toLowerCase().includes(q) || (b.menus||[]).some(m=> ((m.name||'')+' '+(m.ingredients||[]).join(' ')).toLowerCase().includes(q)) ); }
+    list=applyQuick(list); const useFilter=!!(state.prefs.rules.length||state.prefs.avoid.length); renderSummary(list); if(!list.length){ $('#emptyState').style.display='block'; return } else { $('#emptyState').style.display='none' }
+    list.forEach(booth=>{ const st=useFilter?boothOverallStatus(booth,state.prefs):'warn'; const tags=[]; if(booth.halal_certified) tags.push('<span class="chip">Halal Certified</span>'); if(booth.vegan_certified) tags.push('<span class="chip">Vegan</span>'); // 대표 메뉴 사진(첫 메뉴 src)
+      const img = booth.menus?.[0]?.src ? `<img src="${booth.menus[0].src}" alt="menu" style="width:80px;height:80px;object-fit:cover;border-radius:12px;margin-right:12px;">` : '';
+      const el=document.createElement('div'); el.className='card booth'; el.innerHTML=`${img}<div class="meta"><div class="row between"><h3>${booth.name}</h3>${badge(st)}</div><div class="chips" style="margin:6px 0 2px">${tags.join(' ')}</div><div class="muted">ID: ${booth.id}</div><div class="row" style="gap:8px; margin-top:8px"><button class="btn sm" data-open="${booth.id}">상세보기</button><button class="btn ghost sm" data-copy="${booth.id}">링크복사</button></div></div>`; cont.appendChild(el); });
+    $$('[data-open]').forEach(b=> b.onclick=()=>{ const id=b.getAttribute('data-open'); state.activeBoothId=id; renderDetail(id); switchTab('detail'); history.replaceState(null,'',`?booth=${id}`) });
+    $$('[data-copy]').forEach(b=> b.onclick=async()=>{ const id=b.getAttribute('data-copy'); const url=location.origin+location.pathname+`?booth=${encodeURIComponent(id)}`; try{ await navigator.clipboard.writeText(url); toast('링크가 복사되었습니다') }catch{ prompt('복사하세요', url) } });
+    renderMap(); // 지도도 같이 렌더
+  }
+
+  // 지도 렌더링 함수 추가
+  function renderMap(){
+    const booths = state.booths;
+    if (!booths.length) return;
+    // 지도 중심 좌표(첫 부스 기준)
+    const center = booths.length ? {lat:booths[0].lat, lng:booths[0].lng} : {lat:37.5665, lng:126.9780};
+    const zoom = 16;
+    // 지도 iframe
+    $('#mapContainer').innerHTML = `
+      <iframe
+        src="https://www.openstreetmap.org/export/embed.html?bbox=${center.lng-0.01},${center.lat-0.008},${center.lng+0.01},${center.lat+0.008}&layer=mapnik"
+        style="width:100%;height:100%;border:0;"
+        allowfullscreen
+        loading="lazy"
+      ></iframe>
+      <div id="mapMarkers" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></div>
+    `;
+    // 마커 오버레이
+    const mapDiv = $('#mapContainer');
+    const markerDiv = mapDiv.querySelector('#mapMarkers');
+    markerDiv.style.pointerEvents = 'auto';
+    // 마커 위치 계산 (간단한 상대좌표, 실제 지도와 정확히 일치하지 않음)
+    markerDiv.innerHTML = booths.map(b=>{
+      // x, y 계산 (지도 bbox 기준)
+      const x = ((b.lng-(center.lng-0.01))/0.02)*mapDiv.offsetWidth;
+      const y = ((center.lat+0.008-b.lat)/0.016)*mapDiv.offsetHeight;
+      return `<div style="position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-100%);cursor:pointer;z-index:2;" data-booth="${b.id}">
+        <span style="background:#4f7cff;color:#fff;padding:4px 8px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.18);">${b.name}</span>
+      </div>`;
+    }).join('');
+    // 마커 클릭 이벤트
+    markerDiv.querySelectorAll('[data-booth]').forEach(el=>{
+      el.onclick = (e)=>{
+        const id = el.getAttribute('data-booth');
+        state.activeBoothId = id;
+        renderDetail(id);
+        switchTab('detail');
+        history.replaceState(null,'',`?booth=${id}`);
+        e.stopPropagation();
+      };
     });
   }
-  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function computeOtsuThreshold(hist, total){
-    let sum = 0; for(let i=0;i<256;i++){ sum += i * hist[i]; }
-    let sumB = 0, wB = 0, wF = 0, varMax = -1, threshold = 127;
-    for(let t=0;t<256;t++){
-      wB += hist[t]; if(wB === 0) continue;
-      wF = total - wB; if(wF === 0) break;
-      sumB += t * hist[t];
-      const mB = sumB / wB;
-      const mF = (sum - sumB) / wF;
-      const varBetween = wB * wF * (mB - mF) * (mB - mF);
-      if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+
+  // ===================== DETAIL =====================
+  function renderDetail(id){ const cont=$('#view-detail'); const booth=state.booths.find(b=>b.id===id) || state.booths[0]; if(!booth) return; const menus=(booth.menus||[]).map(m=>{ const ev=evaluateMenuSafety(m,state.prefs); const tags=(m.tags||[]).map(t=>`<span class="chip">${t}</span>`).join(' '); const reasons=ev.reasons.length?`<div class="muted" style="margin-top:6px">• ${ev.reasons.join('<br>• ')}</div>`:''; const img = m.src ? `<img src="${m.src}" alt="menu" style="width:100%;max-width:320px;height:auto;object-fit:cover;border-radius:12px;margin-bottom:8px;">` : ''; return `<div class="card">${img}<div class="row between"><h3>${m.name}</h3>${badge(ev.status)}</div><div class="chips" style="margin:6px 0">${tags}</div><div class="muted">${(m.ingredients||[]).join(', ')||'ingredients N/A'}</div>${m.note?`<div class="muted" style="margin-top:6px">Note: ${m.note}</div>`:''}<div class="row" style="gap:8px; margin-top:8px"><button class="btn sm" data-log="${booth.id}::${m.name}">이 메뉴 먹었어요</button></div></div>` }).join(''); const notes=(booth.notes||[]).length?`<div class="muted">${booth.notes.map(n=>'• '+n).join('<br>')}</div>`:''; cont.innerHTML=`<div class="card"><div class="row between"><div><h2 style="margin:0">${booth.name}</h2><div class="chips" style="margin-top:6px">${booth.halal_certified?'<span class="chip">Halal Certified</span>':''}${booth.vegan_certified?'<span class="chip">Vegan</span>':''}</div></div><div>${badge(boothOverallStatus(booth,state.prefs))}</div></div><div style="margin-top:6px">${notes}</div></div>${menus||'<div class="card">등록된 메뉴가 없습니다</div>'}<div class="card"><h3>내 식사 기록</h3><div id="history"></div></div>`; renderHistory(); $$('[data-log]').forEach(b=> b.onclick=()=>{ const [bid,mname]=b.getAttribute('data-log').split('::'); const hist=store.get('sdn_history',[]); hist.unshift({ts:Date.now(), boothId:bid, menu:mname}); store.set('sdn_history',hist); renderHistory(); toast('기록되었습니다') }); }
+
+  function renderHistory(){ const hist=store.get('sdn_history',[]); const el=$('#history'); if(!el) return; if(!hist.length){ el.innerHTML='<div class="muted">아직 기록이 없습니다</div>'; return } el.innerHTML=hist.map(h=>{ const d=new Date(h.ts).toLocaleString(); return `<div class="row between" style="padding:8px 0; border-bottom:1px dashed var(--border)"><div>${d}</div><div class="muted">${h.boothId}</div><div><b>${h.menu}</b></div></div>` }).join(''); }
+
+  // ===================== ADMIN IMPORT =====================
+  function importJson(){ try{ const arr=JSON.parse($('#adminPaste').value.trim()); if(!Array.isArray(arr)) throw new Error('Array JSON 필요'); const map=new Map(state.booths.map(b=>[b.id,b])); for(const b of arr){ map.set(b.id,b) } state.booths=[...map.values()]; store.set('sdn_booths',state.booths); toast('불러오기 완료'); renderBoothList(); }catch(e){ alert('JSON 파싱 오류: '+e.message) } }
+  function importLines(){
+    const text = $('#adminPaste').value || '';
+    // ↓ 정규식 오류 수정: 줄바꿈 기준 분리
+    const lines = text.split(/\r?\n+/).map(s=>s.trim()).filter(Boolean);
+    const map = new Map(state.booths.map(b=>[b.id,b]));
+    for (const line of lines){
+      const [id,name,rest] = line.split('|').map(s=>s?.trim());
+      if(!id||!name||!rest) continue;
+      const parts = rest.split(',').map(x=>x.trim());
+      const menuName = parts.shift();
+      const ing = parts;
+      const booth = map.get(id) || {id, name, halal_certified:false, vegan_certified:false, menus:[], notes:[]};
+      booth.menus.push({name:menuName, ingredients:ing});
+      map.set(id, booth);
     }
-    return threshold;
+    state.booths = [...map.values()];
+    store.set('sdn_booths', state.booths);
+    toast('줄단위 입력 완료');
+    renderBoothList();
   }
-  async function preprocessImageToDataURL(dataUrl, opts){
-    const options = Object.assign({ scale: 2, binarize: true, maxSide: 3000 }, opts||{});
-    const img = await loadImage(dataUrl);
-    let w = img.naturalWidth || img.width;
-    let h = img.naturalHeight || img.height;
-    // 확대
-    const s = Number(options.scale) || 1;
-    let W = Math.round(w * s), H = Math.round(h * s);
-    const scaleDown = Math.max(W, H) > options.maxSide ? options.maxSide / Math.max(W, H) : 1;
-    if(scaleDown < 1){ W = Math.round(W * scaleDown); H = Math.round(H * scaleDown); }
-    const oc = document.createElement('canvas'); oc.width = W; oc.height = H;
-    const ox = oc.getContext('2d');
-    ox.imageSmoothingEnabled = false;
-    ox.drawImage(img, 0, 0, W, H);
-    if(options.binarize){
-      const id = ox.getImageData(0, 0, W, H);
-      const d = id.data;
-      // 그레이스케일 + 히스토그램
-      const hist = new Uint32Array(256);
-      for(let i=0;i<d.length;i+=4){
-        const r=d[i], g=d[i+1], b=d[i+2];
-        const y = clamp(Math.round(0.299*r + 0.587*g + 0.114*b),0,255);
-        d[i]=d[i+1]=d[i+2]=y; hist[y]++;
-      }
-      const total = (d.length/4)|0;
-      const th = computeOtsuThreshold(hist, total);
-      // 이진화
-      for(let i=0;i<d.length;i+=4){
-        const y = d[i]; const v = y > th ? 255 : 0;
-        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
-      }
-      ox.putImageData(id, 0, 0);
-    }
-    return oc.toDataURL('image/png');
-  }
+  function clearData(){ if(confirm('모든 부스/기록 데이터를 초기화할까요?')){ localStorage.removeItem('sdn_booths'); localStorage.removeItem('sdn_history'); state.booths=SAMPLE_BOOTHS; store.set('sdn_booths',state.booths); renderBoothList(); toast('초기화 완료'); } }
 
-  // ---------- 업로드 ----------
-  pickBtn.addEventListener('click', ()=> fileInput.click());
-  fileInput.addEventListener('change', async (e)=>{
-    const f = e.target.files && e.target.files[0];
-    if(!f) return;
-    setPreview(await readFileAsDataURL(f));
-  });
-  clearBtn.addEventListener('click', ()=>{
-    fileInput.value = "";
-    setPreview(null);
-  });
-  // Drag & Drop
-  ;['dragenter','dragover','dragleave','drop'].forEach(ev=>{
-    drop.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); }, false);
-  });
-  drop.addEventListener('dragover', ()=> drop.style.background = '#fafafa');
-  ;['dragleave','drop'].forEach(ev => drop.addEventListener(ev, ()=> drop.style.background = 'transparent'));
-  drop.addEventListener('drop', async (e)=>{
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if(!f) return;
-    setPreview(await readFileAsDataURL(f));
+  // ===================== SHEET CONTROL =====================
+  const openSheet=()=> $('#sheet').classList.add('open'); const closeSheet=()=> $('#sheet').classList.remove('open');
+
+  // ===================== EVENTS =====================
+  $('#lang').onchange=(e)=>{ state.lang=e.target.value; store.set('sdn_lang',state.lang); document.documentElement.lang=state.lang; document.documentElement.dir=state.lang==='ar'?'rtl':'ltr'; toast('언어 변경됨'); };
+  $('#openSheet').onclick=openSheet; $('#openSheetTop').onclick=openSheet; $('#closeSheet').onclick=closeSheet;
+  $('#savePrefs').onclick=savePrefs; $('#resetPrefs').onclick=resetPrefs;
+  $('#q').oninput=renderBoothList;
+  $$('#quickChips .chip').forEach(c=> c.onclick=()=>{ const k=c.dataset.quick; state.quick[k]=!state.quick[k]; c.classList.toggle('active', state.quick[k]); renderBoothList(); });
+  wireAvoidChips();
+
+  $$('.tab').forEach(t=> t.onclick=()=>{ const tab=t.dataset.tab; $$('.tab').forEach(x=>x.classList.toggle('active', x===t)); switchTab(tab); });
+  function switchTab(name){ $('#view-booths').style.display = name==='booths'?'block':'none'; $('#view-detail').style.display = name==='detail'?'block':'none'; $('#view-admin').style.display = name==='admin'?'block':'none'; if(name==='share'){ doShare(); $$('.tab').find(x=>x.dataset.tab==='booths').click(); } if(name==='booths') renderBoothList(); if(name==='detail' && state.activeBoothId) renderDetail(state.activeBoothId); }
+
+  $('#btnExport').onclick=()=>{ const payload={ prefs:state.prefs, booths:state.booths, history:store.get('sdn_history',[]) }; const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='sdn-food-filter-export.json'; a.click(); URL.revokeObjectURL(url); };
+  $('#btnTheme').onclick=()=>{ const cur = document.documentElement.classList.contains('light')?'light':'dark'; const next = cur==='light'?'dark':'light'; document.documentElement.classList.toggle('light', next==='light'); store.set('sdn_theme', next); toast(next==='light'?'라이트 모드':'다크 모드'); };
+  $('#seedData').onclick=()=>{ localStorage.removeItem('sdn_booths'); state.booths = SAMPLE_BOOTHS; store.set('sdn_booths', state.booths); renderBoothList(); toast('샘플 데이터가 재설정되었습니다'); };
+
+  async function doShare(){ try{ const url=location.href; if(navigator.share){ await navigator.share({ title:'SDN Food Booth Filter', url }); } else { await navigator.clipboard.writeText(url); toast('링크를 클립보드에 복사했어요') } } catch(e){ toast('공유가 취소되었어요') } }
+
+  // OCR
+  $('#importJson')?.addEventListener('click', importJson);
+  $('#importLines')?.addEventListener('click', importLines);
+  $('#clearData')?.addEventListener('click', clearData);
+  $('#runOcr')?.addEventListener('click', async()=>{
+    const file=$('#ocrFile').files?.[0]; if(!file){ alert('이미지를 선택하세요'); return }
+    $('#ocrStatus').textContent='Tesseract.js 로딩 중...'; try{ if(!window.Tesseract){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js'; s.onload=res; s.onerror=rej; document.body.appendChild(s) }); }
+      $('#ocrStatus').textContent='인식 중...'; const imgUrl=URL.createObjectURL(file); const result=await Tesseract.recognize(imgUrl, state.lang==='ko'?'kor':'eng'); $('#ocrOut').value=result?.data?.text||''; $('#ocrStatus').textContent='완료'; } catch(e){ $('#ocrStatus').textContent='실패'; alert('OCR 실패: '+e.message) }
   });
 
-  // ---------- OCR ----------
-  runBtn.addEventListener('click', async ()=>{
-    if(!state.dataUrl) return notify('먼저 메모 사진을 올려주세요.');
-    showOverlay(true);
-    setOverlayText('전처리 중…');
-    try{
-      const lang = langSel.value || 'kor+eng';
-      const psm = parseInt(psmSel.value || '6', 10);
-      const usePre = !!usePreChk.checked;
-      const scale = parseFloat(scaleSel.value || '2');
-      const inputUrl = usePre ? await preprocessImageToDataURL(state.dataUrl, { scale }) : state.dataUrl;
-      setOverlayText('OCR 중…');
-      const result = await Tesseract.recognize(inputUrl, lang, {
-        logger: m => { if(m && m.progress!=null){ setOverlayText(`OCR 중… ${(m.progress*100).toFixed(0)}%`); } },
-        langPath: 'https://tessdata.projectnaptha.com/5',
-        tessedit_pageseg_mode: psm
-      });
-      const text = (result && result.data && result.data.text || '').trim();
-      state.ocrText = text;
-      ocrTextEl.value = text;
-      if(!text) notify('문자를 찾지 못했습니다. 텍스트를 직접 입력해 주세요.');
-    }catch(err){
-      console.error(err);
-      const msg = (err && err.message) || '';
-      if(/traineddata/i.test(msg)){
-        notify('언어 데이터(kor/eng) 로드에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.');
-      } else {
-        notify('OCR 중 문제가 발생했습니다. 이미지가 흐리면 밝게 촬영하고, 전처리/PSM을 바꿔 다시 시도해 주세요.');
-      }
-    }finally{
-      showOverlay(false); setOverlayText();
-    }
-  });
+  // START
+  init();
 
-  copyBtn.addEventListener('click', async ()=>{
-    try{
-      await navigator.clipboard.writeText(ocrTextEl.value || '');
-      notify('텍스트가 복사되었습니다.');
-    }catch{ notify('복사에 실패했습니다.'); }
-  });
-
-  ocrTextEl.addEventListener('input', (e)=>{ state.ocrText = e.target.value; });
-
-  // ---------- 단계 추론 ----------
-  const KEYMAP = {
-    "로그인": { title:"로그인", desc:"아이디/비밀번호 입력" },
-    "아이디": { title:"로그인", desc:"아이디/비밀번호 입력" },
-    "비밀번호": { title:"로그인", desc:"아이디/비밀번호 입력" },
-    "저장":   { title:"저장",   desc:"오른쪽 위 버튼" },
-    "세이브": { title:"저장",   desc:"오른쪽 위 버튼" },
-    "내보내기":{ title:"내보내기", desc:"PDF로 저장" },
-    "업로드": { title:"제출",   desc:"파일 올리기" },
-    "제출":   { title:"제출",   desc:"업로드 후 확인" },
-    "첨부":   { title:"제출",   desc:"파일 올리기" },
-    "공유":   { title:"제출",   desc:"권한 확인" },
-    "파일":   { title:"파일 선택", desc:"내 문서에서" },
-  };
-
-  function inferStepsFromText(text, max=5){
-    const tokens = (text||"")
-      .replace(/\n/g, " ")
-      .split(/[\s>→\-\.\·,;]+/)
-      .map(t=>t.trim())
-      .filter(Boolean);
-    const steps = [];
-    for(const t of tokens){
-      for(const k of Object.keys(KEYMAP)){
-        if(t.includes(k)){
-          const s = KEYMAP[k];
-          if(!steps.find(x=>x.title===s.title)) steps.push({...s});
-        }
-      }
-      if(steps.length>=max) break;
-    }
-    // 최소 3스텝 보장
-    if(steps.length<3){
-      const base = [
-        { title:"시작", desc:"앱/사이트 열기" },
-        { title:"핵심", desc:"안내 따라하기" },
-        { title:"완료", desc:"제출/저장 확인" },
-      ];
-      for(const b of base){ if(!steps.find(x=>x.title===b.title)) steps.push(b); }
-    }
-    return steps.slice(0,3);
-  }
-
-  function renderStepsEditor(){
-    stepsArea.innerHTML = "";
-    state.steps.forEach((s, i)=>{
-      const wrap = document.createElement('div');
-      wrap.className = "step-box stack";
-      const title = document.createElement('div');
-      title.style.fontWeight = '700';
-      title.textContent = `단계 ${i+1}`;
-      const ti = document.createElement('input');
-      ti.type = "text"; ti.value = s.title; ti.className="field";
-      const di = document.createElement('input');
-      di.type = "text"; di.value = s.desc||""; di.className="field";
-      ti.addEventListener('input', e=>{ state.steps[i].title = e.target.value; });
-      di.addEventListener('input', e=>{ state.steps[i].desc  = e.target.value; });
-      wrap.appendChild(title); wrap.appendChild(ti); wrap.appendChild(di);
-      stepsArea.appendChild(wrap);
-    });
-  }
-
-  inferBtn.addEventListener('click', ()=>{
-    const text = state.ocrText || '';
-    state.steps = inferStepsFromText(text);
-    renderStepsEditor();
-  });
-
-  // 초기 에디터 표시
-  renderStepsEditor();
-
-  // ---------- 카드 캔버스 렌더 ----------
-  contrastToggle.addEventListener('change', (e)=>{
-    state.highContrast = e.target.checked;
-    body.classList.toggle('hc', state.highContrast);
-    drawCard();
-  });
-
-  makeBtn.addEventListener('click', ()=>{
-    if(!state.steps || state.steps.length<1) return notify('단계를 먼저 생성/수정해 주세요.');
-    drawCard();
-    dlBtn.disabled = false;
-  });
-
-
-  dlBtn.addEventListener('click', ()=>{
-    const url = canvas.toDataURL("image/png");
-    const a = document.createElement('a');
-    a.href = url; a.download = "today-card.png"; a.click();
-  });
-
-  function drawCard(){
-    const W = canvas.width, H = canvas.height;
-    // 색
-    const bg = "#ffffff";
-    const card = "#ffffff";
-    const border = "#e5e7eb";
-    const text = "#111111";
-    const hint = "#6b7280";
-    const accent = "#ef4444";
-
-    // 배경
-    ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
-
-    // 외곽 카드
-    const PAD = 56, R = 28;
-    roundedRect(ctx, PAD, PAD, W-2*PAD, H-2*PAD, R);
-    ctx.fillStyle = card; ctx.fill();
-
-    // 제목
-    ctx.fillStyle = text;
-    ctx.font = "700 56px system-ui, -apple-system, Segoe UI";
-    ctx.fillText(state.cardTitle, PAD+40, PAD+100);
-
-    // 진행바
-    ctx.font = "700 30px system-ui";
-    const labels = ["지금","다음","완료"];
-    labels.forEach((lb,i)=>{
-      const x = PAD + 60 + i*220;
-      ctx.fillStyle = text; ctx.fillText(lb, x, PAD+160);
-      ctx.beginPath(); ctx.arc(x+22, PAD+190, 12, 0, Math.PI*2);
-      ctx.fillStyle = accent; ctx.fill();
-    });
-
-    // 단계 카드 3개
-    const baseY = PAD+240, GAP = 280;
-    (state.steps||[]).slice(0,3).forEach((s, idx)=>{
-      const y = baseY + idx*GAP;
-      drawStep(ctx, {x:PAD+40, y, w:W-2*PAD-80, h:220}, s, text, accent, border, hint);
-    });
-
-    // 푸터
-    ctx.fillStyle = hint; ctx.font = "400 26px system-ui";
-    ctx.fillText("실수해도 괜찮아요. 되돌리기가 있어요.", PAD+40, H-PAD-28);
-  }
-
-  function roundedRect(ctx,x,y,w,h,r){
-    ctx.beginPath();
-    ctx.moveTo(x+r,y);
-    ctx.arcTo(x+w,y, x+w,y+h, r);
-    ctx.arcTo(x+w,y+h, x,y+h, r);
-    ctx.arcTo(x,y+h, x,y, r);
-    ctx.arcTo(x,y, x+w,y, r);
-    ctx.closePath();
-  }
-  function drawStep(ctx, box, step, text, accent, border, hint){
-    // 배경
-    roundedRect(ctx, box.x, box.y, box.w, box.h, 20);
-    ctx.fillStyle = "#f9fafb"; ctx.fill();
-    // 강조 아이콘 영역
-    ctx.beginPath(); ctx.arc(box.x+60, box.y+box.h/2, 36, 0, Math.PI*2);
-    ctx.fillStyle = accent+"cc"; ctx.fill();
-
-    // 텍스트
-    ctx.fillStyle = text; ctx.font = "700 40px system-ui";
-    ctx.fillText(step.title||"단계", box.x+120, box.y+90);
-    ctx.font = "400 30px system-ui";
-    const d = (step.desc||"").slice(0,32);
-    ctx.fillText(d, box.x+120, box.y+140);
-  }
-
-  // 초기 캔버스
-  drawCard();
-
-  // ---------- 설명 생성 & TTS ----------
-  function generateExplanationFromSteps(steps){
-    const s = (steps || []).slice(0,3);
-    if(s.length === 0) return '';
-    const parts = s.map((st, idx)=>{
-      const prefix = idx === 0 ? '먼저 ' : (idx === s.length-1 ? '마지막으로 ' : '다음으로 ');
-      const title = (st && st.title) ? st.title : '작업';
-      const desc = (st && st.desc) ? st.desc : '';
-      const body = desc ? `${title}을(를) ${desc} 해야 합니다.` : `${title}을(를) 수행해야 합니다.`;
-      return prefix + body;
-    });
-    return parts.join(' ');
-  }
-
-  genBtn.addEventListener('click', ()=>{
-    const text = generateExplanationFromSteps(state.steps);
-    explainEl.value = text || '단계를 먼저 생성한 뒤 설명을 만들 수 있어요.';
-  });
-
-  function pickKoreanVoice(){
-    const voices = window.speechSynthesis.getVoices();
-    if(!voices || voices.length===0) return null;
-    const ko = voices.find(v=> (v.lang||'').toLowerCase().startsWith('ko'))
-            || voices.find(v=> (v.lang||'').toLowerCase().includes('ko'))
-            || null;
-    return ko;
-  }
-
-  let speaking = false;
-  function speakText(text){
-    if(!('speechSynthesis' in window)){
-      notify('이 브라우저는 TTS를 지원하지 않습니다.');
-      return;
-    }
-    if(speaking){
-      window.speechSynthesis.cancel();
-      speaking = false;
-      speakBtn.textContent = '읽어주기 (TTS)';
-      return;
-    }
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'ko-KR';
-    const voice = pickKoreanVoice();
-    if(voice) utter.voice = voice;
-    utter.rate = 1.0; // 0.1 ~ 10
-    utter.pitch = 1.0; // 0 ~ 2
-    utter.onend = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
-    utter.onerror = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
-    speaking = true;
-    speakBtn.textContent = '정지';
-    window.speechSynthesis.speak(utter);
-  }
-
-  // iOS 등에서 voices 로드 지연 대응
-  window.speechSynthesis && window.speechSynthesis.addEventListener('voiceschanged', ()=>{/* no-op; pick at speak time */});
-
-  speakBtn && speakBtn.addEventListener('click', ()=>{
-    let text = explainEl.value && explainEl.value.trim();
-    if(!text){
-      text = generateExplanationFromSteps(state.steps);
-      explainEl.value = text;
-    }
-    if(!text){ notify('읽을 설명이 없습니다. 단계를 먼저 생성해 주세요.'); return; }
-    speakText(text);
-  });
-</script>
+  </script>
 </body>
 </html>

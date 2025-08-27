@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>메모 → 따라하기 카드 (프론트 전용 MVP)</title>
+<!-- Tesseract.js (브라우저 OCR) -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  :root{
+    --bg:#f6f7fb; --text:#111; --muted:#6b7280; --accent:#111;
+    --card:#fff; --border:#e5e7eb; --accent-strong:#ef4444;
+  }
+  .hc { --bg:#ffffff; --text:#0a0a0a; --muted:#374151; --accent:#0a0a0a; --card:#ffffff; --border:#d1d5db; --accent-strong:#ef4444; }
+  html,body{height:100%;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif,system-ui, -apple-system, Segoe UI,Roboto,Apple Color Emoji, Noto Color Emoji, "Noto Sans KR", "Malgun Gothic", sans-serif;}
+  .container{max-width:820px; margin:0 auto; padding:20px;}
+  h1{font-size:24px; font-weight:800; margin:6px 0 18px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px;}
+  .stack{display:grid; gap:12px;}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .btn{border:1px solid var(--border); background:#111; color:#fff; padding:12px 16px; border-radius:12px; font-size:16px; cursor:pointer}
+  .btn.alt{background:#fff; color:var(--text)}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.55; cursor:not-allowed}
+  .hint{color:var(--muted); font-size:13px}
+  .field, textarea, input[type="text"]{
+    width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:12px; font-size:16px; background:#fff;
+  }
+  .drop{border:2px dashed var(--border); border-radius:16px; padding:20px; text-align:center}
+  img.preview{width:100%; height:auto; border-radius:12px; border:1px solid var(--border)}
+  .pill{font-size:12px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:#fff}
+  .step-box{border:1px solid var(--border); border-radius:12px; padding:12px}
+  .grid3{display:grid; gap:12px}
+  @media(min-width:640px){ .grid3{grid-template-columns: 1fr 1fr 1fr;} }
+  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; color:#fff; font-size:18px; z-index:50}
+  .overlay.show{display:flex}
+  .toggle{display:flex; align-items:center; gap:6px; font-size:14px}
+  .progress{display:flex; gap:22px; padding:4px 0 6px 2px}
+  .progress .dot{width:10px; height:10px; border-radius:50%; background:var(--accent-strong)}
+  .footer-note{color:var(--muted); font-size:14px}
+  .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background:#f3f4f6; border:1px solid var(--border); border-radius:6px; padding:2px 6px; font-size:12px}
+  /* --- UI 강화 --- */
+  .section-title{font-weight:700; font-size:14px; color:var(--muted); letter-spacing:.2px; display:flex; align-items:center; gap:8px}
+  .card{box-shadow: 0 1px 2px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.04); transition: box-shadow .2s ease, transform .2s ease}
+  .card:hover{box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 12px 28px rgba(0,0,0,0.08)}
+  .btn{transition: background .15s ease, transform .05s ease, box-shadow .15s ease; box-shadow: 0 1px 0 rgba(0,0,0,.04)}
+  .btn:hover{filter: brightness(1.02)}
+  .btn:active{transform: translateY(1px)}
+  .drop{background: linear-gradient(180deg, #ffffff, #fcfcfd)}
+  .drop.over{background:#f9fafb; border-color:#d1d5db}
+  img.preview{box-shadow: 0 2px 14px rgba(0,0,0,0.06)}
+  .step-box{background:#fcfcfd}
+  .field:focus, textarea:focus, input[type="text"]:focus{outline:none; border-color:#c7d2fe; box-shadow: 0 0 0 3px rgba(99,102,241,0.12)}
+  .canvas{box-shadow: 0 2px 20px rgba(0,0,0,0.08)}
+  /* overlay spinner */
+  .overlay::before{content:""; width:22px; height:22px; border:3px solid rgba(255,255,255,0.5); border-top-color:#fff; border-radius:50%; margin-right:10px; display:inline-block; animation:spin 1s linear infinite}
+  .overlay > div{display:flex; align-items:center}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body class="hc">
+<div class="overlay" id="overlay"><div>처리 중… 잠시만요</div></div>
+<div class="container">
+  <h1>메모 → 따라하기 카드 (프론트 전용 MVP)</h1>
+
+  <!-- 접근성/설정 -->
+  <div class="card stack">
+    <div class="row">
+      <label class="toggle">
+        <input type="checkbox" id="contrastToggle" checked />
+        고대비 모드
+      </label>
+      <span class="pill">브라우저 OCR (Tesseract.js)</span>
+      <span class="pill">서버 없음 · 오프라인 가능*</span>
+    </div>
+    <div class="hint">* 최초 실행 시 OCR 엔진이 로드되며 네트워크가 필요할 수 있습니다. 이후 브라우저 캐시 사용.</div>
+  </div>
+
+  <!-- 업로드 영역 -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="section-title">이미지 업로드</div>
+    <div class="stack">
+      <div class="drop" id="drop">
+        <div style="margin-bottom:8px;">종이 메모 사진을 올려주세요</div>
+        <div class="row" style="justify-content:center;">
+          <input id="file" type="file" accept="image/*" capture="environment" style="display:none" />
+          <button class="btn" id="pick">사진 찍기 / 업로드</button>
+          <button class="btn alt" id="clear">지우기</button>
+        </div>
+        <div class="hint" style="margin-top:8px">밝은 곳에서 수직으로 촬영하면 인식률이 높습니다.</div>
+      </div>
+      <img id="preview" class="preview" alt="" style="display:none" />
+    </div>
+  </div>
+
+  <!-- OCR & 텍스트 편집 -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="section-title">OCR 인식 · 전처리</div>
+    <div class="row">
+      <button class="btn" id="runOCR">OCR로 텍스트 추출</button>
+      <button class="btn alt" id="copyText">추출 텍스트 복사</button>
+      <select id="lang" class="field" style="max-width:220px">
+        <option value="kor+eng" selected>한국어+영어 (kor+eng)</option>
+        <option value="kor">한국어 (kor)</option>
+        <option value="eng">영어 (eng)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label class="toggle">
+        <span>PSM</span>
+        <select id="psm" class="field" style="max-width:200px">
+          <option value="3">3 - 완전 자동 (OSD 제외)</option>
+          <option value="4">4 - 텍스트가 있는 단일 열</option>
+          <option value="6" selected>6 - 균일한 단일 블록</option>
+          <option value="7">7 - 한 줄</option>
+          <option value="8">8 - 한 단어</option>
+          <option value="13">13 - 원시 줄</option>
+        </select>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="usePre" checked /> 전처리(확대/이진화)
+      </label>
+      <select id="scale" class="field" style="max-width:140px">
+        <option value="1">x1.0</option>
+        <option value="1.5">x1.5</option>
+        <option value="2" selected>x2.0</option>
+        <option value="3">x3.0</option>
+      </select>
+    </div>
+    <textarea id="ocrText" rows="6" placeholder="OCR 결과가 여기에 표시됩니다. 실패 시 여기에 직접 적어도 됩니다." class="field"></textarea>
+    <div class="hint">OCR이 잘 안 되면, 간단히 “로그인 → 저장 → 제출”처럼 핵심 단어만 적어도 됩니다.</div>
+  </div>
+
+  <!-- 단계 추론 & 편집 -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="section-title">핵심 단계 추출</div>
+    <div class="row">
+      <button class="btn" id="infer">단계 자동 추출</button>
+      <span class="hint">자동으로 3단계를 뽑아드립니다. 이후 직접 수정할 수 있어요.</span>
+    </div>
+    <div id="stepsArea" class="grid3"></div>
+  </div>
+
+  <!-- 설명 생성 & TTS (프로토타입) -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="section-title">설명 생성 · TTS</div>
+    <div class="row">
+      <button class="btn" id="genExplain">설명 만들기</button>
+      <button class="btn alt" id="speak">읽어주기 (TTS)</button>
+    </div>
+    <textarea id="explainText" rows="6" class="field" placeholder="예: 먼저 로그인해야 합니다. 다음으로 저장해야 합니다. 마지막으로 제출해야 합니다." readonly></textarea>
+    <div class="hint">프로토타입: 인식된 단계로 간단한 설명을 생성하고 한 번 읽어줍니다.</div>
+  </div>
+
+  <!-- 카드 생성 & 미리보기 -->
+  <div class="card stack" style="margin-top:12px;">
+    <div class="section-title">카드 미리보기</div>
+    <div class="row">
+      <button class="btn" id="makeCard">카드 이미지 만들기</button>
+      <button class="btn alt" id="download" disabled>다운로드 (PNG)</button>
+    </div>
+    <div class="stack">
+      <canvas id="cardCanvas" width="1080" height="1350" class="canvas" style="width:100%; border:1px solid var(--border); border-radius:12px; background:#fff"></canvas>
+      <div class="footer-note">팁: <span class="kbd">Ctrl/Cmd + P</span> 로 인쇄하면 종이 카드로도 활용할 수 있어요.</div>
+    </div>
+  </div>
+
+  <div style="height:24px"></div>
+</div>
+
+<script>
+  // ---------- 상태 ----------
+  const state = {
+    dataUrl: null,
+    ocrText: "",
+    steps: [
+      { title: "로그인", desc: "아이디/비밀번호 입력" },
+      { title: "저장",   desc: "오른쪽 위 버튼" },
+      { title: "제출",   desc: "업로드 후 확인" },
+    ],
+    highContrast: true,
+    cardTitle: "오늘의 따라하기"
+  };
+
+  // ---------- DOM ----------
+  const body = document.body;
+  const overlay = document.getElementById('overlay');
+  const contrastToggle = document.getElementById('contrastToggle');
+
+  const fileInput = document.getElementById('file');
+  const pickBtn = document.getElementById('pick');
+  const clearBtn = document.getElementById('clear');
+  const drop = document.getElementById('drop');
+  const preview = document.getElementById('preview');
+
+  const runBtn = document.getElementById('runOCR');
+  const copyBtn = document.getElementById('copyText');
+  const langSel = document.getElementById('lang');
+  const psmSel = document.getElementById('psm');
+  const usePreChk = document.getElementById('usePre');
+  const scaleSel = document.getElementById('scale');
+  const ocrTextEl = document.getElementById('ocrText');
+
+  const inferBtn = document.getElementById('infer');
+  const stepsArea = document.getElementById('stepsArea');
+
+  const genBtn = document.getElementById('genExplain');
+  const speakBtn = document.getElementById('speak');
+  const explainEl = document.getElementById('explainText');
+
+  const makeBtn = document.getElementById('makeCard');
+  const dlBtn = document.getElementById('download');
+  const canvas = document.getElementById('cardCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // ---------- 유틸 ----------
+  function showOverlay(on) { overlay.classList.toggle('show', !!on); }
+  function readFileAsDataURL(file){ return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(file); }); }
+  function setPreview(dataUrl){
+    state.dataUrl = dataUrl;
+    if(dataUrl){ preview.src = dataUrl; preview.style.display = ""; }
+    else { preview.removeAttribute('src'); preview.style.display = "none"; }
+  }
+  function notify(msg){ alert(msg); }
+  function setOverlayText(text){
+    const inner = overlay.firstElementChild;
+    if(inner) inner.textContent = text || '처리 중… 잠시만요';
+  }
+  function loadImage(src){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      img.onload = ()=> resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+  function computeOtsuThreshold(hist, total){
+    let sum = 0; for(let i=0;i<256;i++){ sum += i * hist[i]; }
+    let sumB = 0, wB = 0, wF = 0, varMax = -1, threshold = 127;
+    for(let t=0;t<256;t++){
+      wB += hist[t]; if(wB === 0) continue;
+      wF = total - wB; if(wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+    }
+    return threshold;
+  }
+  async function preprocessImageToDataURL(dataUrl, opts){
+    const options = Object.assign({ scale: 2, binarize: true, maxSide: 3000 }, opts||{});
+    const img = await loadImage(dataUrl);
+    let w = img.naturalWidth || img.width;
+    let h = img.naturalHeight || img.height;
+    // 확대
+    const s = Number(options.scale) || 1;
+    let W = Math.round(w * s), H = Math.round(h * s);
+    const scaleDown = Math.max(W, H) > options.maxSide ? options.maxSide / Math.max(W, H) : 1;
+    if(scaleDown < 1){ W = Math.round(W * scaleDown); H = Math.round(H * scaleDown); }
+    const oc = document.createElement('canvas'); oc.width = W; oc.height = H;
+    const ox = oc.getContext('2d');
+    ox.imageSmoothingEnabled = false;
+    ox.drawImage(img, 0, 0, W, H);
+    if(options.binarize){
+      const id = ox.getImageData(0, 0, W, H);
+      const d = id.data;
+      // 그레이스케일 + 히스토그램
+      const hist = new Uint32Array(256);
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i], g=d[i+1], b=d[i+2];
+        const y = clamp(Math.round(0.299*r + 0.587*g + 0.114*b),0,255);
+        d[i]=d[i+1]=d[i+2]=y; hist[y]++;
+      }
+      const total = (d.length/4)|0;
+      const th = computeOtsuThreshold(hist, total);
+      // 이진화
+      for(let i=0;i<d.length;i+=4){
+        const y = d[i]; const v = y > th ? 255 : 0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+      ox.putImageData(id, 0, 0);
+    }
+    return oc.toDataURL('image/png');
+  }
+
+  // ---------- 업로드 ----------
+  pickBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', async (e)=>{
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    setPreview(await readFileAsDataURL(f));
+  });
+  clearBtn.addEventListener('click', ()=>{
+    fileInput.value = "";
+    setPreview(null);
+  });
+  // Drag & Drop
+  ;['dragenter','dragover','dragleave','drop'].forEach(ev=>{
+    drop.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); }, false);
+  });
+  drop.addEventListener('dragover', ()=> drop.style.background = '#fafafa');
+  ;['dragenter'].forEach(ev => drop.addEventListener(ev, ()=> drop.classList.add('over')));
+  ;['dragleave','drop'].forEach(ev => drop.addEventListener(ev, ()=>{ drop.classList.remove('over'); drop.style.background = 'transparent'; }));
+  drop.addEventListener('drop', async (e)=>{
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(!f) return;
+    setPreview(await readFileAsDataURL(f));
+  });
+
+  // ---------- OCR ----------
+  runBtn.addEventListener('click', async ()=>{
+    if(!state.dataUrl) return notify('먼저 메모 사진을 올려주세요.');
+    showOverlay(true);
+    setOverlayText('전처리 중…');
+    try{
+      const lang = langSel.value || 'kor+eng';
+      const psm = parseInt(psmSel.value || '6', 10);
+      const usePre = !!usePreChk.checked;
+      const scale = parseFloat(scaleSel.value || '2');
+      const inputUrl = usePre ? await preprocessImageToDataURL(state.dataUrl, { scale }) : state.dataUrl;
+      setOverlayText('OCR 중…');
+      const result = await Tesseract.recognize(inputUrl, lang, {
+        logger: m => { if(m && m.progress!=null){ setOverlayText(`OCR 중… ${(m.progress*100).toFixed(0)}%`); } },
+        langPath: 'https://tessdata.projectnaptha.com/5',
+        tessedit_pageseg_mode: psm
+      });
+      const text = (result && result.data && result.data.text || '').trim();
+      state.ocrText = text;
+      ocrTextEl.value = text;
+      if(!text) notify('문자를 찾지 못했습니다. 텍스트를 직접 입력해 주세요.');
+    }catch(err){
+      console.error(err);
+      const msg = (err && err.message) || '';
+      if(/traineddata/i.test(msg)){
+        notify('언어 데이터(kor/eng) 로드에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.');
+      } else {
+        notify('OCR 중 문제가 발생했습니다. 이미지가 흐리면 밝게 촬영하고, 전처리/PSM을 바꿔 다시 시도해 주세요.');
+      }
+    }finally{
+      showOverlay(false); setOverlayText();
+    }
+  });
+
+  copyBtn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(ocrTextEl.value || '');
+      notify('텍스트가 복사되었습니다.');
+    }catch{ notify('복사에 실패했습니다.'); }
+  });
+
+  ocrTextEl.addEventListener('input', (e)=>{ state.ocrText = e.target.value; });
+
+  // ---------- 단계 추론 ----------
+  const KEYMAP = {
+    "로그인": { title:"로그인", desc:"아이디/비밀번호 입력" },
+    "아이디": { title:"로그인", desc:"아이디/비밀번호 입력" },
+    "비밀번호": { title:"로그인", desc:"아이디/비밀번호 입력" },
+    "저장":   { title:"저장",   desc:"오른쪽 위 버튼" },
+    "세이브": { title:"저장",   desc:"오른쪽 위 버튼" },
+    "내보내기":{ title:"내보내기", desc:"PDF로 저장" },
+    "업로드": { title:"제출",   desc:"파일 올리기" },
+    "제출":   { title:"제출",   desc:"업로드 후 확인" },
+    "첨부":   { title:"제출",   desc:"파일 올리기" },
+    "공유":   { title:"제출",   desc:"권한 확인" },
+    "파일":   { title:"파일 선택", desc:"내 문서에서" },
+  };
+
+  function inferStepsFromText(text, max=5){
+    const tokens = (text||"")
+      .replace(/\n/g, " ")
+      .split(/[\s>→\-\.\·,;]+/)
+      .map(t=>t.trim())
+      .filter(Boolean);
+    const steps = [];
+    for(const t of tokens){
+      for(const k of Object.keys(KEYMAP)){
+        if(t.includes(k)){
+          const s = KEYMAP[k];
+          if(!steps.find(x=>x.title===s.title)) steps.push({...s});
+        }
+      }
+      if(steps.length>=max) break;
+    }
+    // 최소 3스텝 보장
+    if(steps.length<3){
+      const base = [
+        { title:"시작", desc:"앱/사이트 열기" },
+        { title:"핵심", desc:"안내 따라하기" },
+        { title:"완료", desc:"제출/저장 확인" },
+      ];
+      for(const b of base){ if(!steps.find(x=>x.title===b.title)) steps.push(b); }
+    }
+    return steps.slice(0,3);
+  }
+
+  function renderStepsEditor(){
+    stepsArea.innerHTML = "";
+    state.steps.forEach((s, i)=>{
+      const wrap = document.createElement('div');
+      wrap.className = "step-box stack";
+      const title = document.createElement('div');
+      title.style.fontWeight = '700';
+      title.textContent = `단계 ${i+1}`;
+      const ti = document.createElement('input');
+      ti.type = "text"; ti.value = s.title; ti.className="field";
+      const di = document.createElement('input');
+      di.type = "text"; di.value = s.desc||""; di.className="field";
+      ti.addEventListener('input', e=>{ state.steps[i].title = e.target.value; });
+      di.addEventListener('input', e=>{ state.steps[i].desc  = e.target.value; });
+      wrap.appendChild(title); wrap.appendChild(ti); wrap.appendChild(di);
+      stepsArea.appendChild(wrap);
+    });
+  }
+
+  inferBtn.addEventListener('click', ()=>{
+    const text = state.ocrText || '';
+    state.steps = inferStepsFromText(text);
+    renderStepsEditor();
+  });
+
+  // 초기 에디터 표시
+  renderStepsEditor();
+
+  // ---------- 카드 캔버스 렌더 ----------
+  contrastToggle.addEventListener('change', (e)=>{
+    state.highContrast = e.target.checked;
+    body.classList.toggle('hc', state.highContrast);
+    drawCard();
+  });
+
+  makeBtn.addEventListener('click', ()=>{
+    if(!state.steps || state.steps.length<1) return notify('단계를 먼저 생성/수정해 주세요.');
+    drawCard();
+    dlBtn.disabled = false;
+  });
+
+
+  dlBtn.addEventListener('click', ()=>{
+    const url = canvas.toDataURL("image/png");
+    const a = document.createElement('a');
+    a.href = url; a.download = "today-card.png"; a.click();
+  });
+
+  function drawCard(){
+    const W = canvas.width, H = canvas.height;
+    // 색
+    const bg = "#ffffff";
+    const card = "#ffffff";
+    const border = "#e5e7eb";
+    const text = "#111111";
+    const hint = "#6b7280";
+    const accent = "#ef4444";
+
+    // 배경
+    ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+
+    // 외곽 카드
+    const PAD = 56, R = 28;
+    roundedRect(ctx, PAD, PAD, W-2*PAD, H-2*PAD, R);
+    ctx.fillStyle = card; ctx.fill();
+
+    // 제목
+    ctx.fillStyle = text;
+    ctx.font = "700 56px system-ui, -apple-system, Segoe UI";
+    ctx.fillText(state.cardTitle, PAD+40, PAD+100);
+
+    // 진행바
+    ctx.font = "700 30px system-ui";
+    const labels = ["지금","다음","완료"];
+    labels.forEach((lb,i)=>{
+      const x = PAD + 60 + i*220;
+      ctx.fillStyle = text; ctx.fillText(lb, x, PAD+160);
+      ctx.beginPath(); ctx.arc(x+22, PAD+190, 12, 0, Math.PI*2);
+      ctx.fillStyle = accent; ctx.fill();
+    });
+
+    // 단계 카드 3개
+    const baseY = PAD+240, GAP = 280;
+    (state.steps||[]).slice(0,3).forEach((s, idx)=>{
+      const y = baseY + idx*GAP;
+      drawStep(ctx, {x:PAD+40, y, w:W-2*PAD-80, h:220}, s, text, accent, border, hint);
+    });
+
+    // 푸터
+    ctx.fillStyle = hint; ctx.font = "400 26px system-ui";
+    ctx.fillText("실수해도 괜찮아요. 되돌리기가 있어요.", PAD+40, H-PAD-28);
+  }
+
+  function roundedRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y, x+w,y+h, r);
+    ctx.arcTo(x+w,y+h, x,y+h, r);
+    ctx.arcTo(x,y+h, x,y, r);
+    ctx.arcTo(x,y, x+w,y, r);
+    ctx.closePath();
+  }
+  function drawStep(ctx, box, step, text, accent, border, hint){
+    // 배경
+    roundedRect(ctx, box.x, box.y, box.w, box.h, 20);
+    ctx.fillStyle = "#f9fafb"; ctx.fill();
+    // 강조 아이콘 영역
+    ctx.beginPath(); ctx.arc(box.x+60, box.y+box.h/2, 36, 0, Math.PI*2);
+    ctx.fillStyle = accent+"cc"; ctx.fill();
+
+    // 텍스트
+    ctx.fillStyle = text; ctx.font = "700 40px system-ui";
+    ctx.fillText(step.title||"단계", box.x+120, box.y+90);
+    ctx.font = "400 30px system-ui";
+    const d = (step.desc||"").slice(0,32);
+    ctx.fillText(d, box.x+120, box.y+140);
+  }
+
+  // 초기 캔버스
+  drawCard();
+
+  // ---------- 설명 생성 & TTS ----------
+  function generateExplanationFromSteps(steps){
+    const s = (steps || []).slice(0,3);
+    if(s.length === 0) return '';
+    const parts = s.map((st, idx)=>{
+      const prefix = idx === 0 ? '먼저 ' : (idx === s.length-1 ? '마지막으로 ' : '다음으로 ');
+      const title = (st && st.title) ? st.title : '작업';
+      const desc = (st && st.desc) ? st.desc : '';
+      const body = desc ? `${title}을(를) ${desc} 해야 합니다.` : `${title}을(를) 수행해야 합니다.`;
+      return prefix + body;
+    });
+    return parts.join(' ');
+  }
+
+  genBtn.addEventListener('click', ()=>{
+    const text = generateExplanationFromSteps(state.steps);
+    explainEl.value = text || '단계를 먼저 생성한 뒤 설명을 만들 수 있어요.';
+  });
+
+  function pickKoreanVoice(){
+    const voices = window.speechSynthesis.getVoices();
+    if(!voices || voices.length===0) return null;
+    const ko = voices.find(v=> (v.lang||'').toLowerCase().startsWith('ko'))
+            || voices.find(v=> (v.lang||'').toLowerCase().includes('ko'))
+            || null;
+    return ko;
+  }
+
+  let speaking = false;
+  function speakText(text){
+    if(!('speechSynthesis' in window)){
+      notify('이 브라우저는 TTS를 지원하지 않습니다.');
+      return;
+    }
+    if(speaking){
+      window.speechSynthesis.cancel();
+      speaking = false;
+      speakBtn.textContent = '읽어주기 (TTS)';
+      return;
+    }
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ko-KR';
+    const voice = pickKoreanVoice();
+    if(voice) utter.voice = voice;
+    utter.rate = 1.0; // 0.1 ~ 10
+    utter.pitch = 1.0; // 0 ~ 2
+    utter.onend = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
+    utter.onerror = ()=>{ speaking = false; speakBtn.textContent = '읽어주기 (TTS)'; };
+    speaking = true;
+    speakBtn.textContent = '정지';
+    window.speechSynthesis.speak(utter);
+  }
+
+  // iOS 등에서 voices 로드 지연 대응
+  window.speechSynthesis && window.speechSynthesis.addEventListener('voiceschanged', ()=>{/* no-op; pick at speak time */});
+
+  speakBtn && speakBtn.addEventListener('click', ()=>{
+    let text = explainEl.value && explainEl.value.trim();
+    if(!text){
+      text = generateExplanationFromSteps(state.steps);
+      explainEl.value = text;
+    }
+    if(!text){ notify('읽을 설명이 없습니다. 단계를 먼저 생성해 주세요.'); return; }
+    speakText(text);
+  });
+</script>
+</body>
+</html>
